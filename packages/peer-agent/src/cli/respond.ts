@@ -1,7 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { resolveRelayUrl } from './relay-url.ts'
+import { readTokenFile } from './token-file.ts'
 
 export interface RespondOpts {
   relayUrl: string
@@ -44,7 +44,7 @@ export async function runRespond(args: string[]): Promise<void> {
   const verdict: 'allow' | 'deny' = (verdictRaw === 'yes' || verdictRaw === 'allow') ? 'allow' : 'deny'
   const reason = argValue(args, '--reason')
   const relayUrl = resolveRelayUrl(args)
-  const token = readFileSync(join(homedir(), '.claude-mesh', 'token'), 'utf8').trim()
+  const token = readTokenFile(join(homedir(), '.claude-mesh', 'token'))
   const opts: RespondOpts = { relayUrl, token, requestId, verdict }
   if (reason !== undefined) opts.reason = reason
   const r = await callRespond(opts)

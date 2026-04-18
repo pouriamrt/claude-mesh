@@ -2,6 +2,7 @@ import { readFileSync, existsSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { z } from 'zod'
+import { readTokenFile } from './cli/token-file.ts'
 
 export const ConfigSchema = z.object({
   relay_url: z.string().url(),
@@ -34,7 +35,7 @@ export function loadConfig(path: string = defaultConfigPath()): MeshConfig {
 
 export function loadToken(path: string): string {
   if (!existsSync(path)) throw new Error(`token file not found: ${path}`)
-  return readFileSync(path, 'utf8').trim()
+  return readTokenFile(path)
 }
 
 /** Walk up from `start` looking for a .git dir. If found, inspect .git/config for any remote.url. */
