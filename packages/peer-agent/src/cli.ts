@@ -1,6 +1,9 @@
 #!/usr/bin/env node
+import { loadEnvFiles } from '@claude-mesh/shared'
 import { runPair } from './cli/pair.ts'
 import { ensureMcpRegistered } from './mcp-registration.ts'
+
+loadEnvFiles()
 
 function argValue(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag)

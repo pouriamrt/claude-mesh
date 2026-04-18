@@ -4,7 +4,7 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md) (33 tasks, 147 tests passing). **Not yet run end-to-end against real Claude Code.** See [Caveats](#caveats).
+> **Status:** software-complete per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md) (33 tasks, 151 tests passing). **Not yet run end-to-end against real Claude Code.** See [Caveats](#caveats).
 
 ## Table of contents
 
@@ -198,21 +198,28 @@ Sanity-check:
 
 ```bash
 pnpm -r exec vitest run
-# Tests  147 passed (149)
+# Tests  151 passed (153)
 #        2 skipped   ← L3 scenarios gated behind CLAUDE_DRIVER
 ```
 
-### 2. Start the relay
+### 2. Configure via `.env`
 
-For local dev, run the relay directly (no Docker required). Pick any port above 1024.
+Copy the example and edit if you want to change ports or paths:
 
 ```bash
-export MESH_DATA=./.mesh-data       # local data dir, git-ignored
-export PORT=8443
-export HOST=127.0.0.1               # loopback only for dev
+cp .env.example .env
 ```
 
-*(Windows / Git Bash: same commands. Windows / PowerShell: use `$env:MESH_DATA=...`.)*
+The relay and `mesh` CLI auto-load `.env.local` (gitignored, for your personal overrides) then `.env` from the current working directory. Pre-existing shell env vars always win, so you can still export things ad-hoc if you prefer.
+
+Default `.env` content:
+
+```
+MESH_DATA=./.mesh-data
+PORT=8443
+HOST=127.0.0.1
+MESH_RELAY=http://127.0.0.1:8443
+```
 
 ### 3. Initialize the team
 
@@ -267,24 +274,19 @@ mesh --help 2>/dev/null || mesh
 
 Save the admin token to `~/.claude-mesh/admin-token` (where every `mesh admin ...` looks for it):
 
+`MESH_RELAY` is read from `.env`, so all `mesh admin ...` calls below omit `--relay`.
+
 ```bash
-mesh admin bootstrap \
-  --token-file ./.mesh-data/admin.token \
-  --relay http://127.0.0.1:8443
+mesh admin bootstrap --token-file ./.mesh-data/admin.token
 # OK Admin token saved to ~/.claude-mesh/admin-token
 ```
-
-*(`--relay` is repeated on every admin call. To avoid retyping: `export MESH_RELAY=http://127.0.0.1:8443`.)*
 
 ### 5. Pair as your first human
 
 Redeem alice's pair code. This also writes the per-device config files `mesh` needs to send messages.
 
 ```bash
-mesh pair \
-  --relay http://127.0.0.1:8443 \
-  $(cat ./.mesh-data/alice.paircode) \
-  --label "alice-laptop"
+mesh pair "$(cat ./.mesh-data/alice.paircode)" --label "alice-laptop"
 # OK Paired as "alice" on device "alice-laptop"
 # OK Bearer token saved to ~/.claude-mesh/token (chmod 600)
 # OK Config written to ~/.claude-mesh/config.json
@@ -298,26 +300,22 @@ You now have `~/.claude-mesh/token` (alice's bearer) and `~/.claude-mesh/config.
 Before touching Claude Code, verify the full HTTP surface works. Add bob:
 
 ```bash
-mesh admin add-user --handle bob --display-name "Bob" --relay http://127.0.0.1:8443
+mesh admin add-user --handle bob --display-name "Bob"
 # OK Created "bob" (human)
 # OK Pair code: MESH-XXXX-YYYY-ZZZZ (expires ...)
 ```
 
-Now simulate bob on a second machine by pairing into a different home dir:
+Now simulate bob on a second machine by pairing into a scratch HOME:
 
 ```bash
-# use a scratch HOME so bob's token doesn't collide with alice's
 mkdir -p /tmp/bob-home
-HOME=/tmp/bob-home mesh pair \
-  --relay http://127.0.0.1:8443 \
-  MESH-XXXX-YYYY-ZZZZ \
-  --label "bob-laptop"
+HOME=/tmp/bob-home mesh pair MESH-XXXX-YYYY-ZZZZ --label "bob-laptop"
 ```
 
 Send alice → bob:
 
 ```bash
-mesh send bob "hello from alice" --relay http://127.0.0.1:8443
+mesh send bob "hello from alice"
 # { "id": "msg_01HR...", "from": "alice", "to": "bob", "kind": "chat", ... }
 ```
 
@@ -427,7 +425,7 @@ mesh admin revoke-token <token_id>                     [--relay <url>]
 mesh admin audit       [--since <ISO8601>]             [--relay <url>]
 ```
 
-Relay URL can also be set via `MESH_RELAY` env var.
+All commands read `MESH_RELAY` from `.env` / `.env.local` / shell env, so the `--relay` flag is optional when it's set.
 
 ## Packages
 

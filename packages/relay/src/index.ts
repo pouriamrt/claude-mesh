@@ -6,6 +6,7 @@ import { writeFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
 import { ulid } from 'ulid'
+import { loadEnvFiles } from '@claude-mesh/shared'
 
 async function prompt(q: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout })
@@ -13,6 +14,7 @@ async function prompt(q: string): Promise<string> {
 }
 
 async function main() {
+  loadEnvFiles()
   const [, , cmd] = process.argv
   const dataDir = process.env.MESH_DATA ?? '/data'
   const dbPath = join(dataDir, 'mesh.sqlite')
