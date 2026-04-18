@@ -1,27 +1,25 @@
+# Publish release artifacts on v*.*.* tags.
+#
+# Currently GHCR-only: we push docker/Dockerfile.relay to GitHub Container
+# Registry as `ghcr.io/<owner>/claude-mesh/relay:<tag>` plus `:latest`.
+#
+# npm publishing for @claude-mesh/peer-agent is intentionally not wired:
+# both workspace packages are `"private": true`, and peer-agent's
+# dependency on `@claude-mesh/shared` uses the `workspace:*` protocol,
+# which needs `@claude-mesh/shared` published first and pnpm's
+# `inject-workspace-packages` plumbing. Revisit once the public API
+# stabilizes and we want peer-agent consumable as a library.
 name: Publish
 on:
   push:
     tags: ["v*.*.*"]
 
 jobs:
-  npm:
-    runs-on: ubuntu-latest
-    permissions: { contents: read, id-token: write }
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm, registry-url: https://registry.npmjs.org }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -F @claude-mesh/shared build
-      - run: pnpm -F @claude-mesh/peer-agent build
-      - run: pnpm -F @claude-mesh/peer-agent publish --access public --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
   ghcr:
     runs-on: ubuntu-latest
-    permissions: { contents: read, packages: write }
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

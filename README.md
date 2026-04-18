@@ -66,6 +66,28 @@ If `delivered_at` is non-null, the whole plumbing works. Jump to [§8 Wire into 
 
 On **Windows**, swap `HOME=/tmp/bob-home` for `$env:USERPROFILE = "C:\Users\you\mesh-bob-home"` in a fresh PowerShell window. Node's `homedir()` on Windows reads `USERPROFILE`, not `HOME`.
 
+## Prebuilt relay image
+
+Released versions of the relay are published as a Docker image on GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/pouriamrt/claude-mesh/relay:latest
+# or pin a version:
+docker pull ghcr.io/pouriamrt/claude-mesh/relay:v0.1.0
+
+docker run -d --name mesh-relay \
+  -p 8443:8443 \
+  -v mesh-data:/data \
+  ghcr.io/pouriamrt/claude-mesh/relay:latest init   # one-time, prompts for team/admin
+
+docker run -d --name mesh-relay \
+  -p 8443:8443 \
+  -v mesh-data:/data \
+  ghcr.io/pouriamrt/claude-mesh/relay:latest        # long-running server
+```
+
+Copy the `admin.token` and `<handle>.paircode` out of the `mesh-data` volume to bootstrap CLIs and teammates; see [Running the project](#running-the-project) for the detailed flow. Published automatically from every `v*.*.*` git tag — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+
 ## Cross-laptop setup (Tailscale recipe)
 
 The relay binds `127.0.0.1` by default. To include a teammate on another laptop **without exposing the relay to the public internet**, use Tailscale:
@@ -81,6 +103,7 @@ Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between t
 
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quickstart](#quickstart-single-machine-2-minutes)
+- [Prebuilt relay image](#prebuilt-relay-image)
 - [Cross-laptop setup (Tailscale)](#cross-laptop-setup-tailscale-recipe)
 - [Architecture](#architecture)
 - [Message flow](#message-flow)
