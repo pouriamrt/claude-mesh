@@ -161,6 +161,8 @@ packages:
     "sourceMap": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
     "forceConsistentCasingInFileNames": true,
     "baseUrl": ".",
     "paths": {
