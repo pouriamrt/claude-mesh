@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { openDatabase, type Db } from '../../src/db/db.ts'
 import { MessageStore } from '../../src/messages/store.ts'
 import { Fanout } from '../../src/fanout.ts'
+import { PresenceRegistry } from '../../src/presence/registry.ts'
 import { buildApp } from '../../src/app.ts'
 import { hashToken, generateRawToken } from '../../src/auth/hash.ts'
 
@@ -26,7 +27,7 @@ describe('POST /v1/messages', () => {
   beforeEach(() => {
     db = openDatabase(':memory:')
     token = seed(db)
-    app = buildApp({ db, store: new MessageStore(db), fanout: new Fanout(), now: () => new Date() })
+    app = buildApp({ db, store: new MessageStore(db), fanout: new Fanout(), presence: new PresenceRegistry(), now: () => new Date() })
   })
 
   async function post(body: unknown, headers: Record<string, string> = {}) {
