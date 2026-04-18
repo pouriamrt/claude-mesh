@@ -374,14 +374,19 @@ Expected: FAIL — `ulid.ts` does not exist.
 - [ ] **Step 7: Write `packages/shared/src/ulid.ts`**
 
 ```ts
-import { ulid } from 'ulid'
+import { monotonicFactory } from 'ulid'
 
 const MESSAGE_ID_REGEX = /^msg_[0-9A-HJKMNP-TV-Z]{26}$/
+
+const monotonicUlid = monotonicFactory()
 
 export type MessageId = `msg_${string}`
 
 export function newMessageId(): MessageId {
-  return `msg_${ulid()}` as MessageId
+  // monotonicFactory guarantees strict ordering even within a single millisecond,
+  // which is required by both the "sequentially sortable" test and by the relay's
+  // `WHERE id > ?` SSE resume cursor.
+  return `msg_${monotonicUlid()}` as MessageId
 }
 
 export function isValidMessageId(id: string): id is MessageId {
