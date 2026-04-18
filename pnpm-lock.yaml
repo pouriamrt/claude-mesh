@@ -29,6 +29,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.1
         version: 1.29.0(zod@3.25.76)
+      ulid:
+        specifier: ^2.3.0
+        version: 2.4.0
       undici:
         specifier: ^6.20.0
         version: 6.25.0

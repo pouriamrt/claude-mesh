@@ -1,0 +1,70 @@
+#!/usr/bin/env node
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { createMcpServer } from './mcp-server.ts'
+import { loadConfig, loadToken, assertTokenNotInRepo } from './config.ts'
+import { RelayClient } from './outbound.ts'
+import { registerTools, TOOL_DESCRIPTORS } from './tools.ts'
+import { SenderGate } from './gate.ts'
+import { InboundDispatcher } from './inbound.ts'
+import { StreamClient } from './stream.ts'
+import { logJson } from './logger.ts'
+
+async function main(): Promise<void> {
+  const cfg = loadConfig()
+  assertTokenNotInRepo(cfg.token_path)
+  const token = loadToken(cfg.token_path)
+
+  const { server } = createMcpServer({ permissionRelay: cfg.permission_relay.enabled })
+  const client = new RelayClient({ relayUrl: cfg.relay_url, token })
+  const { callTool } = registerTools(client, cfg.presence)
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...TOOL_DESCRIPTORS] }))
+  server.setRequestHandler(CallToolRequestSchema, async req => {
+    try { return await callTool(req.params.name, req.params.arguments ?? {}) }
+    catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { content: [{ type: 'text', text: `error: ${message}` }], isError: true }
+    }
+  })
+
+  const initialPeers = await client.listPeers()
+  const gate = new SenderGate(initialPeers.map(p => p.handle))
+  setInterval(async () => {
+    try { gate.setRoster((await client.listPeers()).map(p => p.handle)) }
+    catch (err) {
+      logJson('warn', 'peer.roster.refresh_error', {
+        err: String(err instanceof Error ? err.message : err),
+      })
+    }
+  }, 60_000)
+
+  let cursor: string | undefined
+  const dispatcher = new InboundDispatcher({
+    gate,
+    emit: n => { void server.notification(n as never) },
+    setCursor: id => { cursor = id },
+  })
+
+  const stream = new StreamClient({
+    relayUrl: cfg.relay_url,
+    token,
+    sinceCursor: () => cursor,
+    onEnvelope: e => dispatcher.handle(e),
+    onAuthError: () => { logJson('error', 'peer.auth_failed'); process.exit(2) },
+  })
+  await server.connect(new StdioServerTransport())
+  stream.start().catch(err => {
+    logJson('error', 'peer.stream.fatal', {
+      err: String(err instanceof Error ? err.message : err),
+    })
+    process.exit(1)
+  })
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch(err => {
+    logJson('error', 'peer.fatal', { err: String(err instanceof Error ? err.message : err) })
+    process.exit(1)
+  })
+}
