@@ -51,16 +51,23 @@ async function main(): Promise<void> {
     }
   })
 
-  const initialPeers = await client.listPeers()
-  const gate = new SenderGate(initialPeers.map(p => p.handle))
-  setInterval(async () => {
-    try { gate.setRoster((await client.listPeers()).map(p => p.handle)) }
-    catch (err) {
-      logJson('warn', 'peer.roster.refresh_error', {
-        err: String(err instanceof Error ? err.message : err),
-      })
+  logJson('info', 'peer.startup', { relay_url: cfg.relay_url })
+
+  // Seed the roster. Failing here used to crash the peer-agent hard, breaking
+  // every Claude Code session if the relay happened to be down. Now: start
+  // with an empty roster, let the refresh loop recover once the relay is back.
+  const gate = new SenderGate([])
+  const refreshRoster = async () => {
+    try {
+      const peers = await client.listPeers()
+      gate.setRoster(peers.map(p => p.handle))
+      logJson('info', 'peer.roster.refreshed', { count: peers.length })
+    } catch (err) {
+      logJson('warn', 'peer.roster.refresh_error', describeError(err))
     }
-  }, 60_000)
+  }
+  void refreshRoster()
+  setInterval(refreshRoster, 60_000)
 
   let cursor: string | undefined
   const dispatcher = new InboundDispatcher({
@@ -87,10 +94,28 @@ async function main(): Promise<void> {
   })
 }
 
+function describeError(err: unknown): Record<string, string> {
+  if (!(err instanceof Error)) return { err: String(err) }
+  const out: Record<string, string> = { err: err.message, name: err.name }
+  const anyErr = err as { code?: unknown; cause?: unknown }
+  if (typeof anyErr.code === 'string') out.code = anyErr.code
+  if (anyErr.cause instanceof Error) {
+    out.cause_message = anyErr.cause.message
+    out.cause_name = anyErr.cause.name
+    const anyCause = anyErr.cause as { code?: unknown; address?: unknown; port?: unknown }
+    if (typeof anyCause.code === 'string') out.cause_code = anyCause.code
+    if (typeof anyCause.address === 'string') out.cause_address = anyCause.address
+    if (typeof anyCause.port === 'number') out.cause_port = String(anyCause.port)
+  } else if (anyErr.cause !== undefined) {
+    out.cause = String(anyErr.cause)
+  }
+  return out
+}
+
 const invokedAsScript = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href
 if (invokedAsScript) {
   main().catch(err => {
-    logJson('error', 'peer.fatal', { err: String(err instanceof Error ? err.message : err) })
+    logJson('error', 'peer.fatal', describeError(err))
     process.exit(1)
   })
 }
