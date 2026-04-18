@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { PERMISSION_REQUEST_TTL_MS } from '@claude-mesh/shared'
 import { createMcpServer } from './mcp-server.ts'
 import { loadConfig, loadToken, assertTokenNotInRepo } from './config.ts'
 import { RelayClient } from './outbound.ts'
-import { registerTools, TOOL_DESCRIPTORS } from './tools.ts'
+import { registerTools, TOOL_DESCRIPTORS, TOOL_DESCRIPTOR_RESPOND } from './tools.ts'
 import { SenderGate } from './gate.ts'
 import { InboundDispatcher } from './inbound.ts'
 import { StreamClient } from './stream.ts'
+import { PermissionTracker } from './permission.ts'
 import { logJson } from './logger.ts'
 
 async function main(): Promise<void> {
@@ -15,11 +17,20 @@ async function main(): Promise<void> {
   assertTokenNotInRepo(cfg.token_path)
   const token = loadToken(cfg.token_path)
 
-  const { server } = createMcpServer({ permissionRelay: cfg.permission_relay.enabled })
+  const permissionRelayEnabled = cfg.permission_relay.enabled
+  const { server } = createMcpServer({ permissionRelay: permissionRelayEnabled })
   const client = new RelayClient({ relayUrl: cfg.relay_url, token })
-  const { callTool } = registerTools(client, cfg.presence)
+  const permissionTracker = permissionRelayEnabled
+    ? new PermissionTracker({ ttlMs: PERMISSION_REQUEST_TTL_MS })
+    : undefined
+  const { callTool } = registerTools(client, cfg.presence, permissionTracker)
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...TOOL_DESCRIPTORS] }))
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [
+      ...TOOL_DESCRIPTORS,
+      ...(permissionRelayEnabled ? [TOOL_DESCRIPTOR_RESPOND] : []),
+    ],
+  }))
   server.setRequestHandler(CallToolRequestSchema, async req => {
     try { return await callTool(req.params.name, req.params.arguments ?? {}) }
     catch (err) {
@@ -44,6 +55,7 @@ async function main(): Promise<void> {
     gate,
     emit: n => { void server.notification(n as never) },
     setCursor: id => { cursor = id },
+    permissionTracker,
   })
 
   const stream = new StreamClient({

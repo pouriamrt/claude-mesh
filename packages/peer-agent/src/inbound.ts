@@ -1,12 +1,14 @@
 import type { Envelope } from '@claude-mesh/shared'
 import { envelopeToChannelNotification } from '@claude-mesh/shared'
 import { SenderGate } from './gate.ts'
+import type { PermissionTracker } from './permission.ts'
 import { logJson } from './logger.ts'
 
 export interface InboundDispatcherOpts {
   gate: SenderGate
   emit: (notification: { method: string; params: Record<string, unknown> }) => void
   setCursor: (id: string) => void
+  permissionTracker?: PermissionTracker | undefined
 }
 
 export class InboundDispatcher {
@@ -17,8 +19,11 @@ export class InboundDispatcher {
       logJson('warn', 'peer.inbound.sender_gate_drop', { from: e.from, msg_id: e.id })
       return
     }
-    const n = envelopeToChannelNotification(e)
-    this.opts.emit(n)
+    if (e.kind === 'permission_request' && this.opts.permissionTracker) {
+      const rid = e.meta.request_id ?? ''
+      if (rid) this.opts.permissionTracker.recordIncoming(rid, e.id, e.from)
+    }
+    this.opts.emit(envelopeToChannelNotification(e))
     this.opts.setCursor(e.id)
   }
 }

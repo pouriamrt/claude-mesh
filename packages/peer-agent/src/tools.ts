@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { HANDLE_REGEX, TEAM_BROADCAST_HANDLE, type OutboundMessage } from '@claude-mesh/shared'
+import { HANDLE_REGEX, TEAM_BROADCAST_HANDLE, type OutboundMessage, type MessageId } from '@claude-mesh/shared'
 import type { RelayClient } from './outbound.ts'
+import type { PermissionTracker } from './permission.ts'
 import { detectWorkingContext } from './roots.ts'
 
 const AddressSchema = z.union([
@@ -16,6 +17,11 @@ const SendInput = z.object({
 })
 const ListInput = z.object({}).strict()
 const SummaryInput = z.object({ summary: z.string().max(200) })
+const RespondInput = z.object({
+  request_id: z.string().regex(/^[a-km-z]{5}$/i),
+  verdict: z.enum(['allow', 'deny']),
+  reason: z.string().optional(),
+})
 
 export const TOOL_DESCRIPTORS = [
   {
@@ -48,13 +54,31 @@ export const TOOL_DESCRIPTORS = [
   },
 ] as const
 
+export const TOOL_DESCRIPTOR_RESPOND = {
+  name: 'respond_to_permission',
+  description: 'Allow or deny a pending permission_request from a peer. Only valid if a request with this request_id is live.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      request_id: { type: 'string', description: '5-letter ID from the incoming request' },
+      verdict: { type: 'string', enum: ['allow', 'deny'] },
+      reason: { type: 'string', description: 'optional' },
+    },
+    required: ['request_id', 'verdict'],
+  },
+} as const
+
 export interface PresenceOpts {
   auto_publish_cwd: boolean
   auto_publish_branch: boolean
   auto_publish_repo: boolean
 }
 
-export function registerTools(client: RelayClient, presence: PresenceOpts) {
+export function registerTools(
+  client: RelayClient,
+  presence: PresenceOpts,
+  permissionTracker?: PermissionTracker,
+) {
   async function callTool(name: string, args: unknown): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
     if (name === 'send_to_peer') {
       const input = SendInput.parse(args)
@@ -64,7 +88,7 @@ export function registerTools(client: RelayClient, presence: PresenceOpts) {
         content: input.content,
         meta: input.meta ?? {},
       }
-      if (input.in_reply_to !== undefined) payload.in_reply_to = input.in_reply_to as `msg_${string}`
+      if (input.in_reply_to !== undefined) payload.in_reply_to = input.in_reply_to as MessageId
       const env = await client.send(payload)
       return { content: [{ type: 'text', text: `sent ${env.id}` }] }
     }
@@ -82,6 +106,27 @@ export function registerTools(client: RelayClient, presence: PresenceOpts) {
       if (presence.auto_publish_repo && ctx.repo) body.repo = ctx.repo
       await client.setPresence(body)
       return { content: [{ type: 'text', text: 'presence updated' }] }
+    }
+    if (name === 'respond_to_permission') {
+      if (!permissionTracker) throw new Error('permission relay disabled')
+      const input = RespondInput.parse(args)
+      const msg_id = permissionTracker.msgIdFor(input.request_id)
+      if (!msg_id) throw new Error(`unknown or expired request_id: ${input.request_id}`)
+      const sender = permissionTracker.senderFor(input.request_id)
+      if (!sender) throw new Error(`no sender for ${input.request_id}`)
+      const meta: Record<string, string> = {
+        request_id: input.request_id.toLowerCase(),
+        behavior: input.verdict,
+      }
+      if (input.reason !== undefined) meta.reason = input.reason
+      await client.send({
+        to: sender,
+        kind: 'permission_verdict',
+        in_reply_to: msg_id as MessageId,
+        content: '',
+        meta,
+      })
+      return { content: [{ type: 'text', text: `verdict sent: ${input.verdict}` }] }
     }
     throw new Error(`unknown tool: ${name}`)
   }
