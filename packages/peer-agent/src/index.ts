@@ -10,6 +10,7 @@ import { SenderGate } from './gate.ts'
 import { InboundDispatcher } from './inbound.ts'
 import { StreamClient } from './stream.ts'
 import { PermissionTracker } from './permission.ts'
+import { ApprovalRouter, type RoutingPolicy } from './approval-routing.ts'
 import { logJson } from './logger.ts'
 
 async function main(): Promise<void> {
@@ -23,6 +24,14 @@ async function main(): Promise<void> {
   const permissionTracker = permissionRelayEnabled
     ? new PermissionTracker({ ttlMs: PERMISSION_REQUEST_TTL_MS })
     : undefined
+  const approvalRouter = new ApprovalRouter({ routing: cfg.permission_relay.routing as RoutingPolicy })
+  const originalSend = client.send.bind(client)
+  client.send = async msg => {
+    if (msg.kind === 'chat' && typeof msg.to === 'string' && msg.to !== '@team') {
+      approvalRouter.recordDm(msg.to)
+    }
+    return originalSend(msg)
+  }
   const { callTool } = registerTools(client, cfg.presence, permissionTracker)
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
