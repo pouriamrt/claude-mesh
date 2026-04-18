@@ -12,6 +12,7 @@ import { StreamClient } from './stream.ts'
 import { PermissionTracker } from './permission.ts'
 import { ApprovalRouter, type RoutingPolicy } from './approval-routing.ts'
 import { ReplyLimiter } from './reply-limiter.ts'
+import { pathToFileURL } from 'node:url'
 import { logJson } from './logger.ts'
 
 async function main(): Promise<void> {
@@ -86,7 +87,8 @@ async function main(): Promise<void> {
   })
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedAsScript = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href
+if (invokedAsScript) {
   main().catch(err => {
     logJson('error', 'peer.fatal', { err: String(err instanceof Error ? err.message : err) })
     process.exit(1)

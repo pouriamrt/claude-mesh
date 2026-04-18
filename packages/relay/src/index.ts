@@ -5,6 +5,7 @@ import { startServer } from './cli/serve.ts'
 import { writeFileSync, chmodSync, existsSync, mkdirSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { createInterface } from 'node:readline'
+import { pathToFileURL } from 'node:url'
 import { ulid } from 'ulid'
 import { loadEnvFiles } from '@claude-mesh/shared'
 
@@ -48,6 +49,7 @@ async function main() {
   startServer({ db_path: dbPath, port, host })
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+const invokedAsScript = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href
+if (invokedAsScript) {
   main().catch(err => { console.error(err); process.exit(1) })
 }

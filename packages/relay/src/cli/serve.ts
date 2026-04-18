@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { serve } from '@hono/node-server'
 import { buildApp } from '../app.ts'
 import { openDatabase } from '../db/db.ts'
@@ -13,6 +14,13 @@ export interface ServeOpts {
 }
 
 export function startServer(opts: ServeOpts) {
+  if (!existsSync(opts.db_path)) {
+    console.error(
+      `No database at ${opts.db_path}.\n` +
+      `Run \`node packages/relay/dist/index.js init\` first to create the team and schema.`
+    )
+    process.exit(1)
+  }
   const db = openDatabase(opts.db_path)
   const store = new MessageStore(db)
   const fanout = new Fanout()
