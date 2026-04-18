@@ -2,11 +2,13 @@ import { Hono } from 'hono'
 import { OutboundMessageSchema, TEAM_BROADCAST_HANDLE, type Envelope } from '@claude-mesh/shared'
 import { bearerAuth, type AuthContext } from '../auth/middleware.ts'
 import { hashToken } from '../auth/hash.ts'
+import { rateLimit } from '../middleware/rate-limit.ts'
 import type { Deps } from '../deps.ts'
 
 export function messagesRoute(deps: Deps) {
   const app = new Hono<{ Variables: AuthContext }>()
   app.use('*', bearerAuth(deps.db, { requireTier: 'human' }))
+  app.use('*', rateLimit({ windowMs: 60_000, max: 120, key: c => `msg:${c.get('token').id}` }))
 
   app.post('/', async c => {
     const idemKey = c.req.header('idempotency-key')
