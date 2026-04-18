@@ -8,6 +8,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         runtime: [node-22, bun-1.2]
     steps:
@@ -23,3 +24,20 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test:ci
+      - name: Upload coverage
+        if: matrix.runtime == 'node-22'
+        uses: actions/upload-artifact@v4
+        with: { name: coverage, path: packages/*/coverage }
+
+  docker:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.relay
+          push: false
+          tags: claude-mesh/relay:ci
