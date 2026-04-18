@@ -5,6 +5,7 @@ import { streamRoute } from './routes/stream.ts'
 import { presenceRoute } from './routes/presence.ts'
 import { peersRoute } from './routes/peers.ts'
 import { authRoute } from './routes/auth.ts'
+import { adminRoute } from './routes/admin.ts'
 
 export function buildApp(deps: Deps) {
   const app = new Hono()
@@ -14,5 +15,6 @@ export function buildApp(deps: Deps) {
   app.route('/v1/presence', presenceRoute(deps))
   app.route('/v1/peers', peersRoute(deps))
   app.route('/v1/auth', authRoute(deps))
+  app.route('/v1/admin', adminRoute(deps))
   return app
 }

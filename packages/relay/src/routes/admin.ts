@@ -1,0 +1,119 @@
+import { Hono } from 'hono'
+import { z } from 'zod'
+import { ulid } from 'ulid'
+import { HANDLE_REGEX, PAIR_CODE_TTL_MS } from '@claude-mesh/shared'
+import { bearerAuth, type AuthContext } from '../auth/middleware.ts'
+import { generatePairCode } from '../auth/pair-code.ts'
+import { hashToken } from '../auth/hash.ts'
+import type { Deps } from '../deps.ts'
+
+const CreateUserBody = z.object({
+  handle: z.string().regex(HANDLE_REGEX),
+  display_name: z.string().min(1).max(128),
+  tier: z.enum(['human', 'admin']).default('human'),
+})
+
+interface AuditRow {
+  id: number
+  at: string
+  actor_human_id: string | null
+  event: string
+  detail_json: string
+}
+
+export function adminRoute(deps: Deps) {
+  const app = new Hono<{ Variables: AuthContext }>()
+  app.use('*', bearerAuth(deps.db, { requireTier: 'admin' }))
+
+  app.post('/users', async c => {
+    const parsed = CreateUserBody.safeParse(await c.req.json().catch(() => null))
+    if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
+    const team = c.get('team_id')
+    const existing = deps.db.prepare(
+      "SELECT 1 AS x FROM human WHERE team_id=? AND handle=?"
+    ).get(team, parsed.data.handle)
+    if (existing) return c.json({ error: 'handle_taken' }, 409)
+
+    const humanId = `h_${ulid()}`
+    const code = generatePairCode()
+    const now = deps.now().toISOString()
+    const expires = new Date(deps.now().getTime() + PAIR_CODE_TTL_MS).toISOString()
+
+    const tx = deps.db.transaction(() => {
+      deps.db.prepare(
+        "INSERT INTO human(id,team_id,handle,display_name,created_at) VALUES (?,?,?,?,?)"
+      ).run(humanId, team, parsed.data.handle, parsed.data.display_name, now)
+      deps.db.prepare(
+        "INSERT INTO pair_code(code_hash,human_id,tier,expires_at,created_at) VALUES (?,?,?,?,?)"
+      ).run(hashToken(code), humanId, parsed.data.tier, expires, now)
+      deps.db.prepare(
+        "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
+      ).run(
+        team, now, c.get('human').id, 'user.create',
+        JSON.stringify({ handle: parsed.data.handle, tier: parsed.data.tier })
+      )
+    })
+    tx()
+    return c.json({
+      handle: parsed.data.handle,
+      display_name: parsed.data.display_name,
+      tier: parsed.data.tier,
+      pair_code: code,
+      expires_at: expires,
+    }, 201)
+  })
+
+  app.delete('/users/:handle', c => {
+    const team = c.get('team_id')
+    const handle = c.req.param('handle')
+    const now = deps.now().toISOString()
+    const info = deps.db.prepare(
+      "UPDATE human SET disabled_at=? WHERE team_id=? AND handle=? AND disabled_at IS NULL"
+    ).run(now, team, handle)
+    if (info.changes === 0) return c.json({ error: 'not_found' }, 404)
+    deps.db.prepare(`
+      UPDATE token SET revoked_at=? WHERE revoked_at IS NULL AND human_id IN
+        (SELECT id FROM human WHERE team_id=? AND handle=?)`
+    ).run(now, team, handle)
+    deps.db.prepare(
+      "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
+    ).run(team, now, c.get('human').id, 'user.disable', JSON.stringify({ handle }))
+    return c.json({ ok: true })
+  })
+
+  app.get('/tokens', c => {
+    const team = c.get('team_id')
+    const rows = deps.db.prepare(`
+      SELECT t.id, t.label, t.tier, t.created_at, t.revoked_at, h.handle
+      FROM token t JOIN human h ON h.id = t.human_id
+      WHERE h.team_id=? ORDER BY t.created_at DESC
+    `).all(team)
+    return c.json(rows)
+  })
+
+  app.delete('/tokens/:id', c => {
+    const team = c.get('team_id')
+    const id = c.req.param('id')
+    const now = deps.now().toISOString()
+    const info = deps.db.prepare(`
+      UPDATE token SET revoked_at=?
+      WHERE id=? AND revoked_at IS NULL AND human_id IN (SELECT id FROM human WHERE team_id=?)
+    `).run(now, id, team)
+    if (info.changes === 0) return c.json({ error: 'not_found' }, 404)
+    deps.db.prepare(
+      "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
+    ).run(team, now, c.get('human').id, 'token.revoke', JSON.stringify({ token_id: id }))
+    return c.json({ ok: true })
+  })
+
+  app.get('/audit', c => {
+    const team = c.get('team_id')
+    const since = c.req.query('since') ?? '1970-01-01T00:00:00Z'
+    const rows = deps.db.prepare(
+      "SELECT id, at, actor_human_id, event, detail_json FROM audit_log WHERE team_id=? AND at >= ? ORDER BY at ASC LIMIT 1000"
+    ).all(team, since) as AuditRow[]
+    return c.json(rows.map(r => ({ ...r, detail: JSON.parse(r.detail_json) })))
+  })
+
+  return app
+}
