@@ -70,17 +70,17 @@ On **Windows**, swap `HOME=/tmp/bob-home` for `$env:USERPROFILE = "C:\Users\you\
 
 Fastest path: **host the relay as a Docker container**, clone the repo on each user's laptop for the `mesh` CLI + MCP server. The peer-agent can't be containerized because it's an MCP stdio server that Claude Code spawns locally.
 
-Images are published on every `v*.*.*` git tag to GHCR: `ghcr.io/pouriamrt/claude-mesh/relay`. Use `:v0.1.1` or newer — `v0.1.0` has a volume-permissions bug (see [release notes](https://github.com/pouriamrt/claude-mesh/releases/tag/v0.1.1)).
+Images are published on every `v*.*.*` git tag to GHCR: `ghcr.io/pouriamrt/claude-mesh/relay`. The examples below use `:latest`; pin a version (e.g. `:v0.1.2`) in production for reproducibility. Avoid `:v0.1.0` (volume-permissions bug — see [release notes](https://github.com/pouriamrt/claude-mesh/releases)).
 
 ### 1. Host the relay (once, on one machine)
 
 ```bash
 docker volume create mesh-data
-docker pull ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1
+docker pull ghcr.io/pouriamrt/claude-mesh/relay:latest
 
 # Initialize the team — interactive prompts for team name, admin handle, display name
 docker run --rm -it -v mesh-data:/data \
-  ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1 init
+  ghcr.io/pouriamrt/claude-mesh/relay:latest init
 
 # Extract the two secrets it wrote
 docker run --rm -v mesh-data:/data alpine cat /data/admin.token
@@ -89,7 +89,7 @@ docker run --rm -v mesh-data:/data alpine cat /data/<admin-handle>.paircode
 # Start the long-running server
 docker run -d --name mesh-relay --restart unless-stopped \
   -p 8443:8443 -v mesh-data:/data \
-  ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1
+  ghcr.io/pouriamrt/claude-mesh/relay:latest
 ```
 
 Save the admin token and the paircode somewhere secure — you'll paste them on the admin laptop in Step 2. Verify the relay is up:
@@ -207,7 +207,8 @@ docker run -d --name mesh-relay --restart unless-stopped \
 
 | Symptom | Fix |
 |---|---|
-| `SQLITE_CANTOPEN` on `init` | You're on `v0.1.0`. Upgrade to `v0.1.1` — it's a permissions bug fixed in that release. |
+| `SQLITE_CANTOPEN` on `init` | You're on `v0.1.0`. Upgrade to `:latest` (or any tag ≥ `v0.1.1`) — it's a permissions bug fixed in that release. |
+| `list_peers` works but `send_to_peer` returns `invalid_message` | Your admin handle isn't lowercase — fixed in `v0.1.2`. Upgrade and add a new admin: `mesh admin add-user --handle mesh-admin --tier admin`, then re-pair. See [v0.1.2 release notes](https://github.com/pouriamrt/claude-mesh/releases/tag/v0.1.2). |
 | `mesh send` returns `"delivered_at": null` | Recipient's `claude-mesh-peers` MCP isn't connected. They need to restart Claude with the `--dangerously-load-development-channels` flag. |
 | Tools load but no `<channel>` tags appear | Missing the `--dangerously-load-development-channels server:claude-mesh-peers` flag on `claude` launch. |
 | `mesh: command not found` | `npm link` didn't wire PATH — rerun from `packages/peer-agent/`, or invoke `node packages/peer-agent/dist/cli.js …` directly. |
