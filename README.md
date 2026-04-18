@@ -13,17 +13,84 @@
 
 > **Status:** software-complete (33 tasks, 151 tests passing) per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 
+---
+
+## What you can do with it
+
+- **DM another Claude** — "Ask alice if the deploy went through" → your Claude calls `send_to_peer`, alice's Claude receives a `<channel source="peers" from="you" ...>` tag mid-conversation and can answer or take action.
+- **Broadcast to the whole team** — `send_to_peer(to="@team", ...)` fans out to everyone online, no spam to offline peers.
+- **Thread replies** — `in_reply_to` + `thread_root` keep multi-turn conversations stitched together across machines.
+- **Relay permissions between Claudes** — when Claude wants to run a risky command it can route the approval dialog to a teammate's Claude (default-off, opt-in per peer-agent).
+- **See who's around** — `list_peers` returns handle, online state, and a free-form summary of what each Claude is currently working on.
+
+A typical received message looks like this inside Claude's context:
+
+```xml
+<channel source="peers" from="alice" msg_id="msg_01KPGTX0RZRDB4SX1P5RNWZFV6"
+         sent_at="2026-04-18T17:53:04.695Z">
+heads up, I just pushed the hotfix to main
+</channel>
+```
+
+Claude treats the body as **untrusted user input** (load-bearing prompt-injection defense — see [Security model](#security-model)).
+
+## Quickstart (single machine, ~2 minutes)
+
+Want to see it move? This runs the relay and two peer-agents on one laptop to prove the pipeline end-to-end.
+
+```bash
+git clone https://github.com/pouriamrt/claude-mesh.git
+cd claude-mesh
+pnpm install && pnpm -r build
+cp .env.example .env
+
+# Start the relay in its own terminal (leave running)
+node packages/relay/dist/index.js init   # prompts: team, admin handle, display name
+node packages/relay/dist/index.js
+
+# In another terminal, link the CLI and pair as the admin
+cd packages/peer-agent && npm link && cd ../..
+mesh admin bootstrap --token-file ./.mesh-data/admin.token
+mesh pair "$(cat ./.mesh-data/<your-admin-handle>.paircode)" --label "my-laptop"
+
+# Add a second identity and send yourself a message
+mesh admin add-user --handle bob --display-name Bob
+# copy the MESH-XXXX-... paircode that prints, then:
+mkdir -p /tmp/bob-home
+HOME=/tmp/bob-home mesh pair MESH-XXXX-XXXX-XXXX-XXXX --label "bob-laptop"
+mesh send bob "hello from admin"
+# → {"id":"msg_...","from":"<admin>","to":"bob","delivered_at":"..."}
+```
+
+If `delivered_at` is non-null, the whole plumbing works. Jump to [§8 Wire into Claude Code](#8-wire-into-claude-code) to actually see the `<channel>` tag appear in a Claude session.
+
+On **Windows**, swap `HOME=/tmp/bob-home` for `$env:USERPROFILE = "C:\Users\you\mesh-bob-home"` in a fresh PowerShell window. Node's `homedir()` on Windows reads `USERPROFILE`, not `HOME`.
+
+## Cross-laptop setup (Tailscale recipe)
+
+The relay binds `127.0.0.1` by default. To include a teammate on another laptop **without exposing the relay to the public internet**, use Tailscale:
+
+1. **Both laptops install Tailscale** and sign in. You can [Share a single node](https://tailscale.com/kb/1084/sharing/) from your admin console if your teammate shouldn't join your full tailnet — they create their own free account, you share *only* the relay machine with them, and they see it as a node in their tailnet.
+2. **Host laptop**: edit `.env`, set `HOST=0.0.0.0`, restart the relay. Tailscale's interface is reachable; other interfaces stay firewalled unless you explicitly open them.
+3. **Teammate's laptop**: clone, install, build, set `.env` to `MESH_RELAY=http://<your-tailscale-ip>:8443`, redeem a pair code you generated with `mesh admin add-user`.
+4. **Launch Claude Code** on both sides with `--dangerously-load-development-channels server:claude-mesh-peers`.
+
+Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between the two tailnet nodes — no TLS termination needed for this path. If the teammate's laptop is lost or compromised, run `mesh admin disable-user --handle <theirs>` on your host to revoke instantly. See [docs/DEPLOY.md](docs/DEPLOY.md) for public-internet + TLS recipes.
+
 ## Table of contents
 
+- [What you can do with it](#what-you-can-do-with-it)
+- [Quickstart](#quickstart-single-machine-2-minutes)
+- [Cross-laptop setup (Tailscale)](#cross-laptop-setup-tailscale-recipe)
 - [Architecture](#architecture)
 - [Message flow](#message-flow)
 - [Permission relay flow](#permission-relay-flow)
 - [Wire format](#wire-format)
 - [Requirements](#requirements)
-- [Running the project](#running-the-project)
+- [Running the project (detailed)](#running-the-project)
   - [0. Prerequisites](#0-prerequisites)
   - [1. Clone, install, build](#1-clone-install-build)
-  - [2. Start the relay](#2-start-the-relay)
+  - [2. Configure via `.env`](#2-configure-via-env)
   - [3. Initialize the team](#3-initialize-the-team)
   - [4. Bootstrap your admin CLI](#4-bootstrap-your-admin-cli)
   - [5. Pair as your first human](#5-pair-as-your-first-human)
@@ -193,7 +260,7 @@ git --version
 ### 1. Clone, install, build
 
 ```bash
-git clone <this-repo> claude-mesh
+git clone https://github.com/pouriamrt/claude-mesh.git
 cd claude-mesh
 pnpm install
 pnpm -r build
@@ -535,4 +602,17 @@ Honest state of the repo as of the last commit:
 
 ## License
 
-MIT
+[MIT](./LICENSE) © 2026 Pouria Mortezaagha
+
+## Contributing
+
+Issues and PRs welcome. Before filing:
+
+1. Check the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md) and [spec](docs/superpowers/specs/2026-04-17-claude-mesh-design.md) — some gaps are known and tracked there.
+2. Run `pnpm -r typecheck && pnpm -r exec vitest run` before pushing. Coverage thresholds are enforced.
+3. Follow the TDD rhythm the existing commits show: failing test → implementation → commit. One atomic commit per change.
+4. Security issues: email rather than filing a public issue. See [docs/SECURITY.md](docs/SECURITY.md) for disclosure policy.
+
+## Acknowledgments
+
+Built on Anthropic's research-preview [`claude/channel`](https://code.claude.com/docs/en/channels-reference) MCP extension. The prompt-injection threat model and charter text in `packages/peer-agent/src/instructions.ts` are adapted from the guidance in the channels reference.
