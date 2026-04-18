@@ -3,6 +3,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: '0 6 * * *'
 
 jobs:
   test:
@@ -41,3 +43,19 @@ jobs:
           file: docker/Dockerfile.relay
           push: false
           tags: claude-mesh/relay:ci
+
+  e2e:
+    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm -F @claude-mesh/shared build && pnpm -F @claude-mesh/relay build && pnpm -F @claude-mesh/peer-agent build
+      - run: pnpm -F @claude-mesh/e2e test:ci
+        env:
+          CLAUDE_DRIVER: cli
