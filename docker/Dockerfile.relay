@@ -12,9 +12,14 @@ COPY packages/relay packages/relay
 RUN pnpm -F @claude-mesh/shared build && pnpm -F @claude-mesh/relay build
 RUN pnpm deploy --legacy --filter @claude-mesh/relay --prod /deploy
 
+# Seed /data with correct ownership so a fresh named volume inherits it.
+# Distroless has no shell for chown, so we stage it in the builder and copy.
+RUN mkdir -p /seed-data && chown -R 65532:65532 /seed-data
+
 FROM gcr.io/distroless/nodejs22-debian12:nonroot
 WORKDIR /app
 COPY --from=build --chown=nonroot:nonroot /deploy ./
+COPY --from=build --chown=nonroot:nonroot /seed-data /data
 ENV NODE_ENV=production MESH_DATA=/data PORT=8443 HOST=0.0.0.0
 VOLUME ["/data"]
 EXPOSE 8443
