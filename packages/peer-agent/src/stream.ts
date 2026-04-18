@@ -88,6 +88,7 @@ export class StreamClient {
     for (const block of parts) {
       const ev = parseSseEvent(block)
       if (!ev) continue
+      logJson('info', 'peer.stream.event', { event: ev.event })
       if (ev.event === 'ping') continue
       if (ev.event !== 'message') continue
       try {
