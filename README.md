@@ -13,8 +13,17 @@
 - [Permission relay flow](#permission-relay-flow)
 - [Wire format](#wire-format)
 - [Requirements](#requirements)
-- [Quickstart (admin)](#quickstart-admin)
-- [Quickstart (teammate)](#quickstart-teammate)
+- [Running the project](#running-the-project)
+  - [0. Prerequisites](#0-prerequisites)
+  - [1. Clone, install, build](#1-clone-install-build)
+  - [2. Start the relay](#2-start-the-relay)
+  - [3. Initialize the team](#3-initialize-the-team)
+  - [4. Bootstrap your admin CLI](#4-bootstrap-your-admin-cli)
+  - [5. Pair as your first human](#5-pair-as-your-first-human)
+  - [6. Smoke-test with the CLI (no Claude needed)](#6-smoke-test-with-the-cli-no-claude-needed)
+  - [7. Add teammates](#7-add-teammates)
+  - [8. Wire into Claude Code](#8-wire-into-claude-code)
+- [Troubleshooting](#troubleshooting)
 - [CLI reference](#cli-reference)
 - [Packages](#packages)
 - [Development](#development)
@@ -153,105 +162,256 @@ See `packages/shared/src/channel.ts`.
 - **Node 22+** with pnpm 10 for local dev. Native `better-sqlite3` binding is built via `node-gyp` if no prebuilt exists for your Node version (MSVC on Windows, `build-essential` on Linux).
 - For Docker: a Linux host with Docker + DNS if you're using the bundled Caddy TLS.
 
-## Quickstart (admin)
+## Running the project
 
-### 1. Clone and build
+This section takes you from a fresh clone to a working relay with two humans sending each other messages. Everything below is copy-pasteable; do it on **one machine first** (both humans live in the same home directory under different env vars) to verify the plumbing, then split across machines once you trust it.
+
+### 0. Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Node | 22 or 24 | 25 has no prebuilt `better-sqlite3`; `node-gyp` will compile from source if you're on 25. |
+| pnpm | 10.x | `corepack enable && corepack prepare pnpm@10 --activate` works fine. |
+| Git | any recent | |
+| C++ toolchain | only if no prebuilt | MSVC Build Tools on Windows, `build-essential` on Debian/Ubuntu, Xcode CLI on macOS. Needed the first time `better-sqlite3` compiles. |
+
+Check everything:
 
 ```bash
-git clone <your fork> claude-mesh && cd claude-mesh
+node --version    # v22.x or v24.x
+pnpm --version    # 10.x
+git --version
+```
+
+### 1. Clone, install, build
+
+```bash
+git clone <this-repo> claude-mesh
+cd claude-mesh
 pnpm install
 pnpm -r build
 ```
 
-### 2. Stand up a relay
+Expected: four packages build (`@claude-mesh/shared`, `relay`, `peer-agent`, `e2e`) with no errors. `packages/relay/dist/index.js` and `packages/peer-agent/dist/index.js` exist afterwards.
 
-**Docker + Caddy** (production, auto-TLS):
-
-```bash
-cd docker
-cp Caddyfile.example Caddyfile        # edit: set your domain
-docker compose up -d relay
-docker compose run --rm relay init    # prompts for team name, admin handle
-docker compose up -d caddy
-```
-
-The `init` step writes `/data/admin.token` and `/data/<admin-handle>.paircode` inside the relay volume. Read them with `docker compose exec relay cat /data/admin.token`.
-
-**Bare Node** (dev):
+Sanity-check:
 
 ```bash
-MESH_DATA=./.mesh-data PORT=8443 node packages/relay/dist/index.js init
-# in another terminal:
-MESH_DATA=./.mesh-data PORT=8443 node packages/relay/dist/index.js
+pnpm -r exec vitest run
+# Tests  147 passed (149)
+#        2 skipped   ← L3 scenarios gated behind CLAUDE_DRIVER
 ```
 
-See [docs/DEPLOY.md](docs/DEPLOY.md) for the full three recipes (VPS, Tailscale-internal, Fly.io / Railway).
+### 2. Start the relay
 
-### 3. Bootstrap your admin CLI
+For local dev, run the relay directly (no Docker required). Pick any port above 1024.
+
+```bash
+export MESH_DATA=./.mesh-data       # local data dir, git-ignored
+export PORT=8443
+export HOST=127.0.0.1               # loopback only for dev
+```
+
+*(Windows / Git Bash: same commands. Windows / PowerShell: use `$env:MESH_DATA=...`.)*
+
+### 3. Initialize the team
+
+One-time. Creates the team row, one admin human, one admin-tier token, and one human-tier pair code for that admin.
+
+```bash
+node packages/relay/dist/index.js init
+```
+
+You'll see prompts:
+
+```
+Team name: acme
+Admin handle: alice
+Admin display name: Alice
+OK Team "acme" created
+OK Admin-tier token written to ./.mesh-data/admin.token
+OK Human-tier pair code for "alice" written to ./.mesh-data/alice.paircode (expires 2026-04-19T...)
+```
+
+Two files now exist on disk (both chmod 0600):
+
+- `./.mesh-data/admin.token` — the admin bearer, for `mesh admin ...` calls
+- `./.mesh-data/alice.paircode` — alice's single-use pair code, redeemable once within 24h
+
+Now start the server (keep this running in one terminal):
+
+```bash
+node packages/relay/dist/index.js
+# {"level":"info","event":"relay.started","at":"...","host":"127.0.0.1","port":8443,"db_path":"./.mesh-data/mesh.sqlite"}
+```
+
+Verify from another terminal:
+
+```bash
+curl http://127.0.0.1:8443/health
+# {"ok":true}
+```
+
+### 4. Bootstrap your admin CLI
+
+Link the `mesh` binary so you can invoke it without `node path/to/cli.js`:
+
+```bash
+# from the repo root
+cd packages/peer-agent
+npm link         # exposes `mesh` and `claude-mesh-peer-agent` globally
+cd ../..
+mesh --help 2>/dev/null || mesh
+# commands: pair, admin, respond, send
+```
+
+Save the admin token to `~/.claude-mesh/admin-token` (where every `mesh admin ...` looks for it):
 
 ```bash
 mesh admin bootstrap \
   --token-file ./.mesh-data/admin.token \
-  --relay https://mesh.example.com
+  --relay http://127.0.0.1:8443
+# OK Admin token saved to ~/.claude-mesh/admin-token
 ```
 
-This copies the admin token into `~/.claude-mesh/admin-token` (mode 0600). Later `mesh admin ...` calls read it from there.
+*(`--relay` is repeated on every admin call. To avoid retyping: `export MESH_RELAY=http://127.0.0.1:8443`.)*
 
-### 4. Add teammates
+### 5. Pair as your first human
 
-```bash
-mesh admin add-user --handle bob --display-name "Bob" --relay https://mesh.example.com
-# prints: MESH-XXXX-XXXX-XXXX (single-use, 24h TTL)
-```
-
-Share the pair code with Bob out of band (Signal, 1Password, whatever).
-
-## Quickstart (teammate)
-
-### 1. Install the peer-agent
-
-Once published:
-
-```bash
-bun add -g @claude-mesh/peer-agent
-# or: npm i -g @claude-mesh/peer-agent
-```
-
-From this checkout today:
-
-```bash
-pnpm -F @claude-mesh/peer-agent build
-npm link packages/peer-agent   # exposes `mesh` and `claude-mesh-peer-agent`
-```
-
-### 2. Pair against the relay
+Redeem alice's pair code. This also writes the per-device config files `mesh` needs to send messages.
 
 ```bash
 mesh pair \
-  --relay https://mesh.example.com \
-  MESH-XXXX-XXXX-XXXX \
+  --relay http://127.0.0.1:8443 \
+  $(cat ./.mesh-data/alice.paircode) \
+  --label "alice-laptop"
+# OK Paired as "alice" on device "alice-laptop"
+# OK Bearer token saved to ~/.claude-mesh/token (chmod 600)
+# OK Config written to ~/.claude-mesh/config.json
+# OK MCP server entry added to ~/.claude.json under "claude-mesh-peers"
+```
+
+You now have `~/.claude-mesh/token` (alice's bearer) and `~/.claude-mesh/config.json` (relay URL + self handle).
+
+### 6. Smoke-test with the CLI (no Claude needed)
+
+Before touching Claude Code, verify the full HTTP surface works. Add bob:
+
+```bash
+mesh admin add-user --handle bob --display-name "Bob" --relay http://127.0.0.1:8443
+# OK Created "bob" (human)
+# OK Pair code: MESH-XXXX-YYYY-ZZZZ (expires ...)
+```
+
+Now simulate bob on a second machine by pairing into a different home dir:
+
+```bash
+# use a scratch HOME so bob's token doesn't collide with alice's
+mkdir -p /tmp/bob-home
+HOME=/tmp/bob-home mesh pair \
+  --relay http://127.0.0.1:8443 \
+  MESH-XXXX-YYYY-ZZZZ \
   --label "bob-laptop"
 ```
 
-This:
+Send alice → bob:
 
-- POSTs the pair code to `/v1/auth/pair`, receives a 43-char bearer token
-- writes `~/.claude-mesh/token` (mode 0600) and `~/.claude-mesh/config.json`
-- registers the peer-agent in `~/.claude.json` under `mcpServers["claude-mesh-peers"]`
+```bash
+mesh send bob "hello from alice" --relay http://127.0.0.1:8443
+# { "id": "msg_01HR...", "from": "alice", "to": "bob", "kind": "chat", ... }
+```
 
-### 3. Restart Claude Code
+Read bob's stream to confirm delivery (Ctrl-C to stop):
 
-The next session exposes three new MCP tools: `send_to_peer`, `list_peers`, `set_summary`. Inbound peer messages arrive as `<channel source="peers" ...>` tags in context.
+```bash
+HOME=/tmp/bob-home bash -c '
+  curl -N -H "authorization: Bearer $(cat ~/.claude-mesh/token)" \
+       "http://127.0.0.1:8443/v1/stream?since=msg_00000000000000000000000000"
+'
+# event: message
+# data: {"id":"msg_01HR...","from":"alice","to":"bob","content":"hello from alice",...}
+```
 
-Example session:
+**If that message arrives, the whole pipeline (auth, relay, fanout, SSE, resume cursor) is working end-to-end.** You don't need Claude Code to get here. 🟢
+
+### 7. Add teammates
+
+For each real teammate:
+
+```bash
+mesh admin add-user --handle <their-handle> --display-name "<Their Name>"
+# prints: MESH-XXXX-XXXX-XXXX
+```
+
+Send them the pair code over a trusted side channel (Signal, 1Password share, in-person). They run `mesh pair` on their machine with that code. Each human may pair from multiple devices (each gets its own token).
+
+### 8. Wire into Claude Code
+
+Requires **Claude Code v2.1.80+** signed in with `claude.ai` (not API key). The `mesh pair` step in §5 already wrote an entry into `~/.claude.json`:
+
+```json
+{
+  "mcpServers": {
+    "claude-mesh-peers": {
+      "command": "/path/to/node",
+      "args": ["/path/to/packages/peer-agent/dist/index.js"]
+    }
+  }
+}
+```
+
+Restart Claude Code. In the new session, run `/mcp` or check the tool list. You should see three new tools: `send_to_peer`, `list_peers`, `set_summary`. Inbound peer messages arrive in context as `<channel source="peers" ...>` tags.
+
+Example interaction (what you type → what Claude does):
 
 ```
-You: "Ping alice and ask what branch she's on."
-Claude: (calls send_to_peer with to=alice, content="what branch?")
-...a few seconds later, in context...
-<channel source="peers" from="alice" msg_id="msg_01HR...">feat/auth-refactor</channel>
-Claude: "Alice says she's on feat/auth-refactor."
+You:    "List my teammates and tell alice I'm about to push a hotfix."
+Claude: (calls list_peers)
+Claude: (calls send_to_peer with to="alice", content="heads up, pushing hotfix to main")
+Claude: "Told alice. She's online with summary: 'reviewing PR 412'."
 ```
+
+If alice's Claude then replies:
+
+```
+<channel source="peers" from="alice" msg_id="msg_01HR...">thanks, ack</channel>
+```
+
+…which arrives mid-turn in your context, and Claude can react to it or show it to you.
+
+## Troubleshooting
+
+**`mesh: command not found`**
+`npm link` didn't register on PATH. Try `node packages/peer-agent/dist/cli.js <args>` directly, or `npm link packages/peer-agent` from the repo root.
+
+**Relay exits immediately on `init` with `refusing to init: db exists`**
+The `init` subcommand is one-shot by design. Delete `./.mesh-data/mesh.sqlite*` to start over. Existing teams/users/tokens are in that file.
+
+**`better-sqlite3` install fails during `pnpm install`**
+The native binding is being compiled from source because no prebuilt matches your Node version. Install MSVC Build Tools (Windows) or `build-essential` + `python3` (Debian). Or downgrade to Node 22/24, which have prebuilt binaries.
+
+**`pair failed: 400 invalid_code`**
+The pair code is either malformed, already consumed (single-use), or expired (24h default TTL). Generate a fresh one with `mesh admin add-user`.
+
+**`pair failed: 400 code_consumed`**
+You already redeemed this code. Delete `~/.claude-mesh/token` + `~/.claude-mesh/config.json` and generate a new pair code via `mesh admin add-user` with a different `--handle`, or re-issue by disabling the existing user (`mesh admin disable-user`) and re-adding.
+
+**Claude Code doesn't show `send_to_peer` after restart**
+Check `~/.claude.json` contains the `claude-mesh-peers` entry. Check Claude Code version: `claude --version` must be 2.1.80+. Check you're signed in with `claude.ai`, not an API key (`/login`). Check the peer-agent didn't crash: run `claude-mesh-peer-agent` manually — it should spin up an MCP server on stdio and log `{"event":"peer.stream.open"...}` once connected.
+
+**Peer-agent refuses to start with "token file is inside a git worktree with a remote"**
+Intentional. The default token path is `~/.claude-mesh/token`, which should be outside any git checkout. If you moved it into a cloned repo, move it back, or remove the remote (`git remote remove origin`) if this is an intentional private clone.
+
+**SSE stream returns 401**
+Token was revoked or the human was disabled. Check `mesh admin audit --since <recent>` for the event, then either re-pair or ask an admin to re-enable the user.
+
+**Nothing arrives on bob's stream**
+Three places to check, in order:
+1. `mesh send` returned a 201 with a valid envelope (the relay accepted it).
+2. `SELECT * FROM message WHERE to_handle='bob'` in `mesh.sqlite` shows the row.
+3. Bob's stream is still connected (`curl -v` will show `< HTTP/1.1 200 OK` + `content-type: text/event-stream`).
+
+If the row is there but the stream didn't get it, bob's peer-agent probably disconnected mid-flight; `?since=<last-id>` on reconnect replays from the cursor.
 
 ## CLI reference
 
