@@ -7,6 +7,7 @@ import { peersRoute } from './routes/peers.ts'
 import { authRoute } from './routes/auth.ts'
 import { adminRoute } from './routes/admin.ts'
 import { metricsRoute } from './routes/metrics.ts'
+import { permissionRoute } from './routes/permission.ts'
 import { accessLog } from './middleware/access-log.ts'
 
 export function buildApp(deps: Deps) {
@@ -20,5 +21,6 @@ export function buildApp(deps: Deps) {
   app.route('/v1/peers', peersRoute(deps))
   app.route('/v1/auth', authRoute(deps))
   app.route('/v1/admin', adminRoute(deps))
+  app.route('/v1/permission', permissionRoute(deps))
   return app
 }
