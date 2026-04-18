@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync, chmodSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
+import { resolveRelayUrl } from './relay-url.ts'
 
 function argValue(args: string[], flag: string): string | undefined {
   const i = args.indexOf(flag)
@@ -49,8 +50,6 @@ export async function runAdminAddUser(opts: AddUserOpts): Promise<void> {
 
 export async function runAdmin(args: string[]): Promise<void> {
   const [sub, ...rest] = args
-  const relayUrl = argValue(rest, '--relay') ?? process.env.MESH_RELAY ?? ''
-  if (!relayUrl) throw new Error('missing --relay <url> (or set MESH_RELAY)')
 
   if (sub === 'bootstrap') {
     const file = argValue(rest, '--token-file')
@@ -65,6 +64,7 @@ export async function runAdmin(args: string[]): Promise<void> {
     return
   }
 
+  const relayUrl = resolveRelayUrl(rest)
   const adminToken = readAdminToken()
   if (sub === 'add-user') {
     const handle = argValue(rest, '--handle')

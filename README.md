@@ -669,7 +669,7 @@ mesh admin revoke-token <token_id>                     [--relay <url>]
 mesh admin audit       [--since <ISO8601>]             [--relay <url>]
 ```
 
-All commands read `MESH_RELAY` from `.env` / `.env.local` / shell env, so the `--relay` flag is optional when it's set.
+The relay URL is resolved in this order: `--relay <url>` flag → `MESH_RELAY` from `.env` / `.env.local` / shell env → `relay_url` field in `~/.claude-mesh/config.json` (written during `mesh pair`). So on any paired machine, all subcommands except `pair` work from any directory with zero flags and no env setup.
 
 ## Packages
 

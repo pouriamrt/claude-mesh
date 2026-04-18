@@ -2,11 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { ulid } from 'ulid'
-
-function argValue(args: string[], flag: string): string | undefined {
-  const i = args.indexOf(flag)
-  return i >= 0 && i + 1 < args.length ? args[i + 1] : undefined
-}
+import { resolveRelayUrl } from './relay-url.ts'
 
 export async function runSend(args: string[]): Promise<void> {
   const to = args[0]
@@ -14,8 +10,7 @@ export async function runSend(args: string[]): Promise<void> {
   if (!to || !content) {
     throw new Error('usage: mesh send <to> <content> [--relay <url>]')
   }
-  const relayUrl = argValue(args, '--relay') ?? process.env.MESH_RELAY
-  if (!relayUrl) throw new Error('missing --relay <url>')
+  const relayUrl = resolveRelayUrl(args)
   const token = readFileSync(join(homedir(), '.claude-mesh', 'token'), 'utf8').trim()
   const res = await fetch(new URL('/v1/messages', relayUrl), {
     method: 'POST',
