@@ -11,6 +11,7 @@ import { InboundDispatcher } from './inbound.ts'
 import { StreamClient } from './stream.ts'
 import { PermissionTracker } from './permission.ts'
 import { ApprovalRouter, type RoutingPolicy } from './approval-routing.ts'
+import { ReplyLimiter } from './reply-limiter.ts'
 import { logJson } from './logger.ts'
 
 async function main(): Promise<void> {
@@ -32,7 +33,8 @@ async function main(): Promise<void> {
     }
     return originalSend(msg)
   }
-  const { callTool } = registerTools(client, cfg.presence, permissionTracker)
+  const replyLimiter = new ReplyLimiter({ windowMs: 10_000, maxReplies: 2 })
+  const { callTool } = registerTools(client, cfg.presence, permissionTracker, replyLimiter)
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
@@ -65,6 +67,7 @@ async function main(): Promise<void> {
     emit: n => { void server.notification(n as never) },
     setCursor: id => { cursor = id },
     permissionTracker,
+    replyLimiter,
   })
 
   const stream = new StreamClient({

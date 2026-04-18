@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { HANDLE_REGEX, TEAM_BROADCAST_HANDLE, type OutboundMessage, type MessageId } from '@claude-mesh/shared'
 import type { RelayClient } from './outbound.ts'
 import type { PermissionTracker } from './permission.ts'
+import type { ReplyLimiter } from './reply-limiter.ts'
 import { detectWorkingContext } from './roots.ts'
 
 const AddressSchema = z.union([
@@ -78,10 +79,21 @@ export function registerTools(
   client: RelayClient,
   presence: PresenceOpts,
   permissionTracker?: PermissionTracker,
+  replyLimiter?: ReplyLimiter,
 ) {
   async function callTool(name: string, args: unknown): Promise<{ content: Array<{ type: 'text'; text: string }> }> {
     if (name === 'send_to_peer') {
       const input = SendInput.parse(args)
+      if (
+        replyLimiter
+        && typeof input.to === 'string'
+        && input.to !== TEAM_BROADCAST_HANDLE
+        && !replyLimiter.canReplyTo(input.to)
+      ) {
+        throw new Error(
+          `reply-storm limiter: too many replies to ${input.to} in the current window; ask the user before continuing`,
+        )
+      }
       const payload: OutboundMessage = {
         to: input.to,
         kind: 'chat',
@@ -90,6 +102,9 @@ export function registerTools(
       }
       if (input.in_reply_to !== undefined) payload.in_reply_to = input.in_reply_to as MessageId
       const env = await client.send(payload)
+      if (replyLimiter && typeof input.to === 'string' && input.to !== TEAM_BROADCAST_HANDLE) {
+        replyLimiter.recordOutbound(input.to)
+      }
       return { content: [{ type: 'text', text: `sent ${env.id}` }] }
     }
     if (name === 'list_peers') {

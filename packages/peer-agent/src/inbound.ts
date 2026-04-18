@@ -2,6 +2,7 @@ import type { Envelope } from '@claude-mesh/shared'
 import { envelopeToChannelNotification } from '@claude-mesh/shared'
 import { SenderGate } from './gate.ts'
 import type { PermissionTracker } from './permission.ts'
+import type { ReplyLimiter } from './reply-limiter.ts'
 import { logJson } from './logger.ts'
 
 export interface InboundDispatcherOpts {
@@ -9,6 +10,7 @@ export interface InboundDispatcherOpts {
   emit: (notification: { method: string; params: Record<string, unknown> }) => void
   setCursor: (id: string) => void
   permissionTracker?: PermissionTracker | undefined
+  replyLimiter?: ReplyLimiter | undefined
 }
 
 export class InboundDispatcher {
@@ -23,6 +25,7 @@ export class InboundDispatcher {
       const rid = e.meta.request_id ?? ''
       if (rid) this.opts.permissionTracker.recordIncoming(rid, e.id, e.from)
     }
+    this.opts.replyLimiter?.recordInbound(e.from)
     this.opts.emit(envelopeToChannelNotification(e))
     this.opts.setCursor(e.id)
   }
