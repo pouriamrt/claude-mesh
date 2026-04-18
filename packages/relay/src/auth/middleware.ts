@@ -64,7 +64,11 @@ export function bearerAuth(
     }
     if (row.revoked_at !== null) return c.json({ error: 'unauthorized' }, 401)
     if (row.disabled_at !== null) return c.json({ error: 'unauthorized' }, 401)
-    if (row.tier !== opts.requireTier) return c.json({ error: 'unauthorized' }, 401)
+    // Tier is a capability hierarchy: admin ⊇ human. An admin token can
+    // satisfy a human-tier gate (send messages, list peers, etc.), but a
+    // human token never reaches admin-only routes.
+    const rank: Record<Tier, number> = { human: 0, admin: 1 }
+    if (rank[row.tier] < rank[opts.requireTier]) return c.json({ error: 'unauthorized' }, 401)
 
     c.set('token', { id: row.token_id, human_id: row.human_id, tier: row.tier, label: row.label })
     c.set('human', {

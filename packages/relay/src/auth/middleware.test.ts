@@ -63,9 +63,19 @@ describe('bearerAuth middleware', () => {
     expect(res.status).toBe(401)
   })
 
-  it('rejects wrong tier (admin token on human-tier route) with 401', async () => {
+  it('accepts admin token on human-tier route (admin ⊇ human)', async () => {
     const raw = seedTeamAndToken(db, 'admin')
     const res = await app.request('/ok', { headers: { authorization: `Bearer ${raw}` } })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ from: 'alice', tier: 'admin' })
+  })
+
+  it('rejects human token on admin-tier route with 401', async () => {
+    const raw = seedTeamAndToken(db, 'human')
+    const adminApp = new Hono<{ Variables: AuthContext }>()
+    adminApp.use('*', bearerAuth(db, { requireTier: 'admin' }))
+    adminApp.get('/ok', c => c.json({ tier: c.get('token').tier }))
+    const res = await adminApp.request('/ok', { headers: { authorization: `Bearer ${raw}` } })
     expect(res.status).toBe(401)
   })
 

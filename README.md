@@ -215,7 +215,8 @@ docker run -d --name mesh-relay --restart unless-stopped \
 | `better-sqlite3` install fails on clone-and-build | Use Node 22 or 24, not 25 (no prebuilt binaries yet). |
 | Port 8443 unreachable from another machine | Check firewall / Tailscale / whatever network path you picked. `curl http://<relay-host>:8443/health` from the client. |
 | `pair failed: 400 code_consumed` | Paircodes are single-use. Admin runs `mesh admin add-user --handle <h> --force` to revoke old tokens and mint a fresh paircode for the same handle. |
-| `add-user failed: 409 handle_taken` | The handle already exists (possibly disabled). Re-use it: `mesh admin add-user --handle <h> --tier admin --force` — revokes any existing tokens, invalidates old paircodes, re-enables if disabled, and mints a fresh paircode. |
+| `add-user failed: 409 handle_taken` | The handle already exists (possibly disabled). Re-use it: `mesh admin add-user --handle <h> --force` — revokes any existing tokens, invalidates old paircodes, re-enables if disabled, and mints a fresh paircode. **Warning: running `--force` again after pairing will revoke the fresh token you just got.** |
+| `mesh send` returns `401 unauthorized` after a successful `pair` | Before `v0.1.4`, pairing with `--tier admin` gave you an admin-tier token that couldn't use `/v1/messages` (human-tier gated). Upgrade to `v0.1.4` where admin ⊇ human, or re-pair as a human with `mesh admin add-user --handle <h> --force` (no `--tier admin`). |
 | `pair failed: 400 invalid_code` | Paircode expired (24h TTL) or malformed. Mint a new one. |
 
 Published automatically from every `v*.*.*` git tag — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
