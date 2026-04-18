@@ -1,5 +1,5 @@
 import { ulid } from 'ulid'
-import { PAIR_CODE_TTL_MS } from '@claude-mesh/shared'
+import { HANDLE_REGEX, PAIR_CODE_TTL_MS } from '@claude-mesh/shared'
 import { generateRawToken, hashToken } from '../auth/hash.ts'
 import { generatePairCode } from '../auth/pair-code.ts'
 import type { Db } from '../db/db.ts'
@@ -11,6 +11,22 @@ export interface InitOpts {
   admin_display_name: string
 }
 
+/**
+ * Handles must match the envelope schema's HANDLE_REGEX (lowercase only) or
+ * every outbound message from that user fails zod validation server-side with
+ * `invalid_message`. This used to only be enforced on the HTTP add-user route,
+ * not on `init`, which let operators shoot themselves in the foot by typing a
+ * capitalized admin handle at the prompt and then hitting cryptic send errors.
+ */
+function assertValidHandle(handle: string): void {
+  if (!HANDLE_REGEX.test(handle)) {
+    throw new Error(
+      `invalid handle "${handle}" — must match ${HANDLE_REGEX} ` +
+      `(lowercase letters, digits, _ or -, starting with a letter, up to 32 chars).`
+    )
+  }
+}
+
 export interface InitResult {
   admin_token: string
   human_pair_code: string
@@ -18,6 +34,7 @@ export interface InitResult {
 }
 
 export function initTeam(db: Db, opts: InitOpts): InitResult {
+  assertValidHandle(opts.admin_handle)
   const existing = db.prepare("SELECT COUNT(*) AS c FROM team").get() as { c: number }
   if (existing.c > 0) throw new Error('relay database already initialized')
 
