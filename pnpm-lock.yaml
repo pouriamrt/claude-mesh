@@ -21,6 +21,28 @@ importers:
         specifier: ^2.1.2
         version: 2.1.9(@types/node@22.19.17)
 
+  packages/e2e:
+    dependencies:
+      '@claude-mesh/peer-agent':
+        specifier: workspace:*
+        version: link:../peer-agent
+      '@claude-mesh/relay':
+        specifier: workspace:*
+        version: link:../relay
+      '@claude-mesh/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@hono/node-server':
+        specifier: ^1.13.1
+        version: 1.19.14(hono@4.12.14)
+      ulid:
+        specifier: ^2.3.0
+        version: 2.4.0
+    devDependencies:
+      vitest:
+        specifier: ^2.1.2
+        version: 2.1.9(@types/node@22.19.17)
+
   packages/peer-agent:
     dependencies:
       '@claude-mesh/shared':
