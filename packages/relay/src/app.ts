@@ -6,10 +6,14 @@ import { presenceRoute } from './routes/presence.ts'
 import { peersRoute } from './routes/peers.ts'
 import { authRoute } from './routes/auth.ts'
 import { adminRoute } from './routes/admin.ts'
+import { metricsRoute } from './routes/metrics.ts'
+import { accessLog } from './middleware/access-log.ts'
 
 export function buildApp(deps: Deps) {
   const app = new Hono()
+  app.use('*', accessLog)
   app.get('/health', c => c.json({ ok: true }))
+  app.route('/metrics', metricsRoute(deps))
   app.route('/v1/messages', messagesRoute(deps))
   app.route('/v1/stream', streamRoute(deps))
   app.route('/v1/presence', presenceRoute(deps))
