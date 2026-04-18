@@ -2,6 +2,7 @@
 import { loadEnvFiles } from '@claude-mesh/shared'
 import { runPair } from './cli/pair.ts'
 import { ensureMcpRegistered } from './mcp-registration.ts'
+import { resolveRelayUrl } from './cli/relay-url.ts'
 
 loadEnvFiles()
 
@@ -13,11 +14,19 @@ function argValue(args: string[], flag: string): string | undefined {
 async function main(): Promise<void> {
   const [, , cmd, ...args] = process.argv
   if (cmd === 'pair') {
-    const relayUrl = argValue(args, '--relay') ?? process.env.MESH_RELAY ?? ''
     const pairCode = args.find(a => /^MESH-/.test(a)) ?? process.env.MESH_PAIR_CODE ?? ''
     const label = argValue(args, '--label') ?? process.env.HOSTNAME ?? 'device'
-    if (!relayUrl || !pairCode) {
-      console.error('usage: mesh pair --relay <url> <pair-code> [--label <device>]')
+    if (!pairCode) {
+      console.error('usage: mesh pair <pair-code> [--relay <url>] [--label <device>]')
+      process.exit(2)
+    }
+    // Use the same resolution order as admin/send/respond: --relay flag →
+    // MESH_RELAY env → ~/.claude-mesh/config.json. The config.json fallback
+    // only helps re-pairs (first-time pair has no config yet) but costs nothing.
+    let relayUrl: string
+    try { relayUrl = resolveRelayUrl(args) }
+    catch {
+      console.error('usage: mesh pair <pair-code> [--relay <url>] [--label <device>]')
       process.exit(2)
     }
     await runPair({ relayUrl, pairCode, deviceLabel: label })
