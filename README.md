@@ -11,7 +11,7 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete (33 tasks, 151 tests passing) per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+> **Status:** software-complete (33 tasks, 151 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 
 ---
 
@@ -97,7 +97,7 @@ The relay binds `127.0.0.1` by default. To include a teammate on another laptop 
 3. **Teammate's laptop**: clone, install, build, set `.env` to `MESH_RELAY=http://<your-tailscale-ip>:8443`, redeem a pair code you generated with `mesh admin add-user`.
 4. **Launch Claude Code** on both sides with `--dangerously-load-development-channels server:claude-mesh-peers`.
 
-Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between the two tailnet nodes — no TLS termination needed for this path. If the teammate's laptop is lost or compromised, run `mesh admin disable-user --handle <theirs>` on your host to revoke instantly. See [docs/DEPLOY.md](docs/DEPLOY.md) for public-internet + TLS recipes.
+Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between the two tailnet nodes — no TLS termination needed for this path. If the teammate's laptop is lost or compromised, run `mesh admin disable-user --handle <theirs>` on your host to revoke instantly. For public-internet exposure you'll want a TLS-terminating reverse proxy (Caddy, Traefik, nginx) in front of the relay — the `docker/` directory has a starting-point Compose file with Caddy.
 
 ## Table of contents
 
@@ -546,10 +546,6 @@ All commands read `MESH_RELAY` from `.env` / `.env.local` / shell env, so the `-
 ```
 .
 ├── docker/                # Dockerfile + compose + Caddy config
-├── docs/
-│   ├── DEPLOY.md
-│   ├── SECURITY.md
-│   └── superpowers/       # spec + implementation plan
 └── packages/
     ├── shared/            # envelope schema, channel serializer, ULID helpers
     ├── relay/             # Hono HTTP relay, SQLite store, SSE fan-out
@@ -610,15 +606,12 @@ flowchart TB
 - Reply-storm limiter: `send_to_peer` capped at 2 replies per inbound peer message within 10 seconds.
 - Tokens are never logged, never passed as env vars to child processes, never exposed to the LLM.
 
-See [docs/SECURITY.md](docs/SECURITY.md) for the threat model, layered defenses, and disclosure policy.
-
 ## Caveats
 
 Honest state of the repo as of the last commit:
 
 - **Inbound flow verified, outbound not yet.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — is verified end-to-end (Windows 11, Claude Code v2.1.80+, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch). The outbound flow (Claude asking a teammate for permission via `send_to_peer`) is unit-tested but has not been smoke-tested across two real Claude sessions; the L3 scenario tests (`dm.test.ts`, `broadcast.test.ts`) remain gated behind `CLAUDE_DRIVER=cli` and skip by default.
-- **Docker image not yet built.** `docker/Dockerfile.relay` is written but `docker build` has never actually run. Expect a first-run iteration.
-- **Outbound permission_request flow incomplete.** The `ApprovalRouter` class and DM-recency tracking are implemented and unit-tested; the MCP `setNotificationHandler` that would turn a Claude Code → peer-agent `permission_request` notification into an outbound envelope (plan Task 24 Step 3) is not wired. `respond_to_permission` (the verdict path) works; initiating a request from CC needs one more bit of wiring.
+- **Outbound permission_request flow incomplete.** The `ApprovalRouter` class and DM-recency tracking are implemented and unit-tested; the MCP `setNotificationHandler` that would turn a Claude Code → peer-agent `permission_request` notification into an outbound envelope is not wired. `respond_to_permission` (the verdict path) works; initiating a request from CC needs one more bit of wiring.
 - **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. The L3 scenario tests are the early-warning system.
 - **Single-region only.** No multi-region HA, no replication.
 - **Admin token is a single-secret failure mode.** Rotate; consider mTLS for admin calls in a future revision.
@@ -632,10 +625,10 @@ Honest state of the repo as of the last commit:
 
 Issues and PRs welcome. Before filing:
 
-1. Check the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md) and [spec](docs/superpowers/specs/2026-04-17-claude-mesh-design.md) — some gaps are known and tracked there.
+1. Check [open issues](https://github.com/pouriamrt/claude-mesh/issues) and [Caveats](#caveats) — some gaps are known.
 2. Run `pnpm -r typecheck && pnpm -r exec vitest run` before pushing. Coverage thresholds are enforced.
 3. Follow the TDD rhythm the existing commits show: failing test → implementation → commit. One atomic commit per change.
-4. Security issues: email rather than filing a public issue. See [docs/SECURITY.md](docs/SECURITY.md) for disclosure policy.
+4. Security issues: email rather than filing a public issue.
 
 ## Acknowledgments
 

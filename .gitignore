@@ -34,3 +34,6 @@ coverage/
 # env
 .env
 .env.local
+
+# local-only design docs (spec, plan, deploy/security notes)
+docs/
