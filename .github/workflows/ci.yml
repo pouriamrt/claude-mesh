@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        runtime: [node-22, bun-1.2]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - if: matrix.runtime == 'node-22'
+        uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - if: matrix.runtime == 'bun-1.2'
+        uses: oven-sh/setup-bun@v2
+        with: { bun-version: 1.2.x }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test:ci
