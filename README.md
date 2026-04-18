@@ -66,27 +66,157 @@ If `delivered_at` is non-null, the whole plumbing works. Jump to [§8 Wire into 
 
 On **Windows**, swap `HOME=/tmp/bob-home` for `$env:USERPROFILE = "C:\Users\you\mesh-bob-home"` in a fresh PowerShell window. Node's `homedir()` on Windows reads `USERPROFILE`, not `HOME`.
 
-## Prebuilt relay image
+## Using Docker (end-to-end)
 
-Released versions of the relay are published as a Docker image on GitHub Container Registry:
+Fastest path: **host the relay as a Docker container**, clone the repo on each user's laptop for the `mesh` CLI + MCP server. The peer-agent can't be containerized because it's an MCP stdio server that Claude Code spawns locally.
+
+Images are published on every `v*.*.*` git tag to GHCR: `ghcr.io/pouriamrt/claude-mesh/relay`. Use `:v0.1.1` or newer — `v0.1.0` has a volume-permissions bug (see [release notes](https://github.com/pouriamrt/claude-mesh/releases/tag/v0.1.1)).
+
+### 1. Host the relay (once, on one machine)
 
 ```bash
-docker pull ghcr.io/pouriamrt/claude-mesh/relay:latest
-# or pin a version:
-docker pull ghcr.io/pouriamrt/claude-mesh/relay:v0.1.0
+docker volume create mesh-data
+docker pull ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1
 
-docker run -d --name mesh-relay \
-  -p 8443:8443 \
-  -v mesh-data:/data \
-  ghcr.io/pouriamrt/claude-mesh/relay:latest init   # one-time, prompts for team/admin
+# Initialize the team — interactive prompts for team name, admin handle, display name
+docker run --rm -it -v mesh-data:/data \
+  ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1 init
 
-docker run -d --name mesh-relay \
-  -p 8443:8443 \
-  -v mesh-data:/data \
-  ghcr.io/pouriamrt/claude-mesh/relay:latest        # long-running server
+# Extract the two secrets it wrote
+docker run --rm -v mesh-data:/data alpine cat /data/admin.token
+docker run --rm -v mesh-data:/data alpine cat /data/<admin-handle>.paircode
+
+# Start the long-running server
+docker run -d --name mesh-relay --restart unless-stopped \
+  -p 8443:8443 -v mesh-data:/data \
+  ghcr.io/pouriamrt/claude-mesh/relay:v0.1.1
 ```
 
-Copy the `admin.token` and `<handle>.paircode` out of the `mesh-data` volume to bootstrap CLIs and teammates; see [Running the project](#running-the-project) for the detailed flow. Published automatically from every `v*.*.*` git tag — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
+Save the admin token and the paircode somewhere secure — you'll paste them on the admin laptop in Step 2. Verify the relay is up:
+
+```bash
+curl http://127.0.0.1:8443/health     # {"ok":true}
+docker logs mesh-relay                # should show relay.started
+```
+
+For cross-laptop access, replace `127.0.0.1` with your Tailscale IP (`tailscale ip -4`), LAN IP, or domain. See [Cross-laptop setup (Tailscale)](#cross-laptop-setup-tailscale-recipe).
+
+### 2. Admin laptop (the one that adds teammates)
+
+The `mesh` CLI and the peer-agent MCP server live in the repo — clone and build once:
+
+```bash
+git clone https://github.com/pouriamrt/claude-mesh.git
+cd claude-mesh
+pnpm install && pnpm -r build
+cd packages/peer-agent && npm link && cd ../..
+
+# Point the CLI at the relay (Tailscale/LAN/public — use whatever the relay is reachable at)
+echo "MESH_RELAY=http://<relay-host>:8443" > .env
+```
+
+**Save the admin token** you extracted in Step 1 — it lives at `~/.claude-mesh/admin-token`:
+
+```bash
+mkdir -p ~/.claude-mesh
+chmod 700 ~/.claude-mesh
+printf '%s' '<paste-admin-token-here>' > ~/.claude-mesh/admin-token
+chmod 600 ~/.claude-mesh/admin-token
+```
+
+**Pair as the admin human** using the paircode from Step 1:
+
+```bash
+mesh pair <PASTE-PAIRCODE-HERE> --label "admin-laptop"
+# → OK Paired as "<admin-handle>"
+# → writes ~/.claude-mesh/{token,config.json} and registers claude-mesh-peers in ~/.claude.json
+```
+
+**Launch Claude Code with the channels flag** (required — without it, `<channel>` tags are silently dropped):
+
+```bash
+claude --dangerously-load-development-channels server:claude-mesh-peers
+```
+
+Inside Claude: `/mcp` should show `claude-mesh-peers` green. Ask **"call list_peers"** — you should see yourself online.
+
+### 3. Add a teammate
+
+On the **admin laptop**:
+
+```bash
+mesh admin add-user --handle bob --display-name "Bob"
+# → prints MESH-XXXX-XXXX-XXXX-XXXX  (pair code, 24h TTL, single-use)
+```
+
+Send that paircode to Bob over a trusted channel (Signal, 1Password share, in-person). **Don't put it in the same place as the admin token.**
+
+### 4. Teammate laptop
+
+Bob runs exactly the same as Step 2, minus the admin-token step:
+
+```bash
+git clone https://github.com/pouriamrt/claude-mesh.git
+cd claude-mesh
+pnpm install && pnpm -r build
+cd packages/peer-agent && npm link && cd ../..
+
+echo "MESH_RELAY=http://<relay-host>:8443" > .env
+
+mesh pair <HIS-PAIRCODE> --label "bob-laptop"
+
+claude --dangerously-load-development-channels server:claude-mesh-peers
+```
+
+### 5. Send a message (either direction)
+
+From any terminal with a paired `mesh` CLI:
+
+```bash
+mesh send <other-handle> "hello from me"
+# → {"id":"msg_...","from":"<you>","to":"<them>","delivered_at":"<timestamp>",...}
+```
+
+`delivered_at` non-null = the recipient's `claude-mesh-peers` MCP is connected to the relay. The recipient's Claude Code receives it mid-conversation as:
+
+```xml
+<channel source="peers" from="<you>" msg_id="msg_..." sent_at="...">hello from me</channel>
+```
+
+### 6. Day-to-day operations
+
+```bash
+# Watch relay logs
+docker logs -f mesh-relay
+
+# Restart after a tweak
+docker restart mesh-relay
+
+# Revoke a teammate (immediately)
+mesh admin disable-user bob
+
+# Upgrade to a new release (data in mesh-data volume survives)
+docker pull ghcr.io/pouriamrt/claude-mesh/relay:v0.2.0
+docker stop mesh-relay && docker rm mesh-relay
+docker run -d --name mesh-relay --restart unless-stopped \
+  -p 8443:8443 -v mesh-data:/data \
+  ghcr.io/pouriamrt/claude-mesh/relay:v0.2.0
+```
+
+### 7. Gotchas
+
+| Symptom | Fix |
+|---|---|
+| `SQLITE_CANTOPEN` on `init` | You're on `v0.1.0`. Upgrade to `v0.1.1` — it's a permissions bug fixed in that release. |
+| `mesh send` returns `"delivered_at": null` | Recipient's `claude-mesh-peers` MCP isn't connected. They need to restart Claude with the `--dangerously-load-development-channels` flag. |
+| Tools load but no `<channel>` tags appear | Missing the `--dangerously-load-development-channels server:claude-mesh-peers` flag on `claude` launch. |
+| `mesh: command not found` | `npm link` didn't wire PATH — rerun from `packages/peer-agent/`, or invoke `node packages/peer-agent/dist/cli.js …` directly. |
+| `better-sqlite3` install fails on clone-and-build | Use Node 22 or 24, not 25 (no prebuilt binaries yet). |
+| Port 8443 unreachable from another machine | Check firewall / Tailscale / whatever network path you picked. `curl http://<relay-host>:8443/health` from the client. |
+| `pair failed: 400 code_consumed` | Paircodes are single-use. Admin runs `mesh admin add-user` to mint a new one. |
+| `pair failed: 400 invalid_code` | Paircode expired (24h TTL) or malformed. Mint a new one. |
+
+Published automatically from every `v*.*.*` git tag — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
 
 ## Cross-laptop setup (Tailscale recipe)
 
@@ -103,7 +233,7 @@ Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between t
 
 - [What you can do with it](#what-you-can-do-with-it)
 - [Quickstart](#quickstart-single-machine-2-minutes)
-- [Prebuilt relay image](#prebuilt-relay-image)
+- [Using Docker (end-to-end)](#using-docker-end-to-end)
 - [Cross-laptop setup (Tailscale)](#cross-laptop-setup-tailscale-recipe)
 - [Architecture](#architecture)
 - [Message flow](#message-flow)
