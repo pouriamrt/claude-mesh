@@ -54,6 +54,42 @@ describe('admin routes', () => {
     expect(res2.status).toBe(409)
   })
 
+  it('force=true resets an existing user (same row, new paircode, old tokens revoked)', async () => {
+    const r1 = await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob' })
+    const firstCode = (await r1.json() as { pair_code: string }).pair_code
+    const bobId = (db.prepare("SELECT id FROM human WHERE handle='bob'").get() as { id: string }).id
+    db.prepare("INSERT INTO token(id,human_id,token_hash,label,tier,created_at) VALUES (?,?,?,?,?,?)")
+      .run('tk_bob_old', bobId, hashToken('raw-old-token'), 'bob-laptop', 'human', new Date().toISOString())
+
+    const r2 = await admin('/users', 'POST',
+      { handle: 'bob', display_name: 'Bob v2', force: true })
+    expect(r2.status).toBe(200)
+    const j2 = await r2.json() as { pair_code: string; reset: boolean; display_name: string }
+    expect(j2.reset).toBe(true)
+    expect(j2.pair_code).not.toBe(firstCode)
+    expect(j2.display_name).toBe('Bob v2')
+
+    const row = db.prepare("SELECT id, display_name, disabled_at FROM human WHERE handle='bob'").get() as { id: string; display_name: string; disabled_at: string | null }
+    expect(row.id).toBe(bobId)
+    expect(row.display_name).toBe('Bob v2')
+    expect(row.disabled_at).toBeNull()
+
+    const old = db.prepare("SELECT revoked_at FROM token WHERE id='tk_bob_old'").get() as { revoked_at: string | null }
+    expect(old.revoked_at).not.toBeNull()
+    const pairCount = (db.prepare("SELECT COUNT(*) AS c FROM pair_code WHERE human_id=?").get(bobId) as { c: number }).c
+    expect(pairCount).toBe(1)
+  })
+
+  it('force=true re-enables a disabled user', async () => {
+    await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob' })
+    await admin('/users/bob', 'DELETE')
+    const r = await admin('/users', 'POST',
+      { handle: 'bob', display_name: 'Bob', force: true })
+    expect(r.status).toBe(200)
+    const row = db.prepare("SELECT disabled_at FROM human WHERE handle='bob'").get() as { disabled_at: string | null }
+    expect(row.disabled_at).toBeNull()
+  })
+
   it('disables a user', async () => {
     await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob' })
     const res = await admin('/users/bob', 'DELETE')

@@ -21,6 +21,7 @@ export interface AddUserOpts {
   handle: string
   displayName: string
   tier: 'human' | 'admin'
+  force?: boolean
   fetch?: typeof globalThis.fetch
   out?: (s: string) => void
 }
@@ -31,6 +32,7 @@ interface AddUserResponse {
   tier: 'human' | 'admin'
   pair_code: string
   expires_at: string
+  reset?: boolean
 }
 
 export async function runAdminAddUser(opts: AddUserOpts): Promise<void> {
@@ -39,12 +41,17 @@ export async function runAdminAddUser(opts: AddUserOpts): Promise<void> {
   const res = await fetchImpl(new URL('/v1/admin/users', opts.relayUrl), {
     method: 'POST',
     headers: { authorization: `Bearer ${opts.adminToken}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ handle: opts.handle, display_name: opts.displayName, tier: opts.tier })
+    body: JSON.stringify({
+      handle: opts.handle, display_name: opts.displayName, tier: opts.tier,
+      force: opts.force ?? false,
+    })
   })
   const text = await res.text()
-  if (res.status !== 201) throw new Error(`add-user failed: ${res.status} ${text}`)
+  if (res.status !== 201 && res.status !== 200) throw new Error(`add-user failed: ${res.status} ${text}`)
   const r = JSON.parse(text) as AddUserResponse
-  out(`OK Created "${r.handle}" (${r.tier})`)
+  const verb = r.reset ? 'Reset' : 'Created'
+  out(`OK ${verb} "${r.handle}" (${r.tier})`)
+  if (r.reset) out(`  Old tokens revoked, unconsumed paircodes invalidated.`)
   out(`OK Pair code: ${r.pair_code} (expires ${r.expires_at})`)
   out(`  Share with: mesh pair --relay ${opts.relayUrl} ${r.pair_code}`)
 }
@@ -72,7 +79,8 @@ export async function runAdmin(args: string[]): Promise<void> {
     if (!handle) throw new Error('missing --handle <name>')
     const displayName = argValue(rest, '--display-name') ?? handle
     const tier = (argValue(rest, '--tier') ?? 'human') as 'human' | 'admin'
-    await runAdminAddUser({ relayUrl, adminToken, handle, displayName, tier })
+    const force = rest.includes('--force')
+    await runAdminAddUser({ relayUrl, adminToken, handle, displayName, tier, force })
     return
   }
   if (sub === 'disable-user') {

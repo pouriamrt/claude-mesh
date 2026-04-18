@@ -11,6 +11,10 @@ const CreateUserBody = z.object({
   handle: z.string().regex(HANDLE_REGEX),
   display_name: z.string().min(1).max(128),
   tier: z.enum(['human', 'admin']).default('human'),
+  // When true, an existing handle is reset instead of rejected: old tokens
+  // revoked, pending paircodes invalidated, disabled_at cleared, display_name
+  // updated, and a fresh paircode minted. Old paired devices stop working.
+  force: z.boolean().default(false),
 })
 
 interface AuditRow {
@@ -29,38 +33,51 @@ export function adminRoute(deps: Deps) {
     const parsed = CreateUserBody.safeParse(await c.req.json().catch(() => null))
     if (!parsed.success) return c.json({ error: 'invalid_body' }, 400)
     const team = c.get('team_id')
+    const { handle, display_name, tier, force } = parsed.data
     const existing = deps.db.prepare(
-      "SELECT 1 AS x FROM human WHERE team_id=? AND handle=?"
-    ).get(team, parsed.data.handle)
-    if (existing) return c.json({ error: 'handle_taken' }, 409)
+      "SELECT id FROM human WHERE team_id=? AND handle=?"
+    ).get(team, handle) as { id: string } | undefined
 
-    const humanId = `h_${ulid()}`
+    if (existing && !force) return c.json({ error: 'handle_taken' }, 409)
+
     const code = generatePairCode()
     const now = deps.now().toISOString()
     const expires = new Date(deps.now().getTime() + PAIR_CODE_TTL_MS).toISOString()
+    const humanId = existing?.id ?? `h_${ulid()}`
 
     const tx = deps.db.transaction(() => {
-      deps.db.prepare(
-        "INSERT INTO human(id,team_id,handle,display_name,created_at) VALUES (?,?,?,?,?)"
-      ).run(humanId, team, parsed.data.handle, parsed.data.display_name, now)
+      if (existing) {
+        // Reset path: reuse the row, revoke old tokens, invalidate pending
+        // paircodes, clear any disabled tombstone, refresh display_name.
+        deps.db.prepare(
+          "UPDATE human SET display_name=?, disabled_at=NULL WHERE id=?"
+        ).run(display_name, existing.id)
+        deps.db.prepare(
+          "UPDATE token SET revoked_at=? WHERE human_id=? AND revoked_at IS NULL"
+        ).run(now, existing.id)
+        deps.db.prepare(
+          "DELETE FROM pair_code WHERE human_id=?"
+        ).run(existing.id)
+      } else {
+        deps.db.prepare(
+          "INSERT INTO human(id,team_id,handle,display_name,created_at) VALUES (?,?,?,?,?)"
+        ).run(humanId, team, handle, display_name, now)
+      }
       deps.db.prepare(
         "INSERT INTO pair_code(code_hash,human_id,tier,expires_at,created_at) VALUES (?,?,?,?,?)"
-      ).run(hashToken(code), humanId, parsed.data.tier, expires, now)
+      ).run(hashToken(code), humanId, tier, expires, now)
       deps.db.prepare(
         "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
       ).run(
-        team, now, c.get('human').id, 'user.create',
-        JSON.stringify({ handle: parsed.data.handle, tier: parsed.data.tier })
+        team, now, c.get('human').id, existing ? 'user.reset' : 'user.create',
+        JSON.stringify({ handle, tier })
       )
     })
     tx()
     return c.json({
-      handle: parsed.data.handle,
-      display_name: parsed.data.display_name,
-      tier: parsed.data.tier,
-      pair_code: code,
-      expires_at: expires,
-    }, 201)
+      handle, display_name, tier, pair_code: code, expires_at: expires,
+      reset: Boolean(existing),
+    }, existing ? 200 : 201)
   })
 
   app.delete('/users/:handle', c => {
