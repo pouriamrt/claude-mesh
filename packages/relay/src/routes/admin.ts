@@ -5,6 +5,7 @@ import { HANDLE_REGEX, PAIR_CODE_TTL_MS } from '@claude-mesh/shared'
 import { bearerAuth, type AuthContext } from '../auth/middleware.ts'
 import { generatePairCode } from '../auth/pair-code.ts'
 import { hashToken } from '../auth/hash.ts'
+import { purgeInactive } from '../purge.ts'
 import type { Deps } from '../deps.ts'
 
 const CreateUserBody = z.object({
@@ -60,8 +61,8 @@ export function adminRoute(deps: Deps) {
         ).run(existing.id)
       } else {
         deps.db.prepare(
-          "INSERT INTO human(id,team_id,handle,display_name,created_at) VALUES (?,?,?,?,?)"
-        ).run(humanId, team, handle, display_name, now)
+          "INSERT INTO human(id,team_id,handle,display_name,created_at,last_active_at) VALUES (?,?,?,?,?,?)"
+        ).run(humanId, team, handle, display_name, now, now)
       }
       deps.db.prepare(
         "INSERT INTO pair_code(code_hash,human_id,tier,expires_at,created_at) VALUES (?,?,?,?,?)"
@@ -83,7 +84,29 @@ export function adminRoute(deps: Deps) {
   app.delete('/users/:handle', c => {
     const team = c.get('team_id')
     const handle = c.req.param('handle')
+    const hard = c.req.query('hard') === 'true'
     const now = deps.now().toISOString()
+
+    if (hard) {
+      const row = deps.db.prepare(
+        "SELECT id FROM human WHERE team_id=? AND handle=?"
+      ).get(team, handle) as { id: string } | undefined
+      if (!row) return c.json({ error: 'not_found' }, 404)
+      // Hard delete: cascade-remove all rows tied to this human so the
+      // handle becomes reusable without --force. Audit is inserted BEFORE
+      // the human row so the FK reference stays valid.
+      deps.db.transaction(() => {
+        deps.db.prepare(
+          "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
+        ).run(team, now, c.get('human').id, 'user.delete', JSON.stringify({ handle, hard: true }))
+        deps.db.prepare("DELETE FROM token WHERE human_id=?").run(row.id)
+        deps.db.prepare("DELETE FROM pair_code WHERE human_id=?").run(row.id)
+        deps.db.prepare("DELETE FROM human WHERE id=?").run(row.id)
+      })()
+      return c.json({ ok: true, hard: true })
+    }
+
+    // Soft disable (default): tombstone + revoke tokens, keep row + handle.
     const info = deps.db.prepare(
       "UPDATE human SET disabled_at=? WHERE team_id=? AND handle=? AND disabled_at IS NULL"
     ).run(now, team, handle)
@@ -95,7 +118,16 @@ export function adminRoute(deps: Deps) {
     deps.db.prepare(
       "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
     ).run(team, now, c.get('human').id, 'user.disable', JSON.stringify({ handle }))
-    return c.json({ ok: true })
+    return c.json({ ok: true, hard: false })
+  })
+
+  app.post('/purge-inactive', async c => {
+    const body = await c.req.json().catch(() => ({})) as { days?: number }
+    const days = Math.max(1, Math.floor(body.days ?? 30))
+    const team = c.get('team_id')
+    const cutoff = new Date(deps.now().getTime() - days * 24 * 60 * 60 * 1000).toISOString()
+    const result = purgeInactive(deps.db, team, cutoff, c.get('human').id, deps.now().toISOString())
+    return c.json({ purged: result.handles, days })
   })
 
   app.get('/tokens', c => {

@@ -48,8 +48,8 @@ export function initTeam(db: Db, opts: InitOpts): InitResult {
   const tx = db.transaction(() => {
     db.prepare("INSERT INTO team(id,name,retention_days,created_at) VALUES (?,?,?,?)")
       .run(opts.team_id, opts.team_name, 7, now)
-    db.prepare("INSERT INTO human(id,team_id,handle,display_name,created_at) VALUES (?,?,?,?,?)")
-      .run(humanId, opts.team_id, opts.admin_handle, opts.admin_display_name, now)
+    db.prepare("INSERT INTO human(id,team_id,handle,display_name,created_at,last_active_at) VALUES (?,?,?,?,?,?)")
+      .run(humanId, opts.team_id, opts.admin_handle, opts.admin_display_name, now, now)
     db.prepare("INSERT INTO token(id,human_id,token_hash,label,tier,created_at) VALUES (?,?,?,?,?,?)")
       .run(tokenId, humanId, hashToken(adminRaw), 'bootstrap-admin', 'admin', now)
     db.prepare("INSERT INTO pair_code(code_hash,human_id,tier,expires_at,created_at) VALUES (?,?,?,?,?)")

@@ -90,6 +90,56 @@ describe('admin routes', () => {
     expect(row.disabled_at).toBeNull()
   })
 
+  it('hard-deletes a user with ?hard=true (handle becomes re-addable)', async () => {
+    await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob' })
+    const bobId = (db.prepare("SELECT id FROM human WHERE handle='bob'").get() as { id: string }).id
+    db.prepare("INSERT INTO token(id,human_id,token_hash,label,tier,created_at) VALUES (?,?,?,?,?,?)")
+      .run('tk_bob', bobId, hashToken('raw'), 'bob-laptop', 'human', new Date().toISOString())
+
+    const res = await app.request('/v1/admin/users/bob?hard=true', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json() as { hard: boolean }).hard).toBe(true)
+
+    // Row and dependents all gone
+    expect(db.prepare("SELECT COUNT(*) AS c FROM human WHERE handle='bob'").get()).toEqual({ c: 0 })
+    expect(db.prepare("SELECT COUNT(*) AS c FROM token WHERE id='tk_bob'").get()).toEqual({ c: 0 })
+    // Handle is reusable without --force
+    const recreate = await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob2' })
+    expect(recreate.status).toBe(201)
+  })
+
+  it('hard delete returns 404 for unknown handle', async () => {
+    const res = await app.request('/v1/admin/users/ghost?hard=true', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    expect(res.status).toBe(404)
+  })
+
+  it('purge-inactive hard-deletes users past the cutoff, preserves admin holders', async () => {
+    // Seed three users: inactive-human, active-human, inactive-but-admin
+    const longAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString()
+    const now = new Date().toISOString()
+    db.prepare("INSERT INTO human(id,team_id,handle,display_name,created_at,last_active_at) VALUES (?,?,?,?,?,?)")
+      .run('h_old', 't1', 'old', 'Old', longAgo, longAgo)
+    db.prepare("INSERT INTO human(id,team_id,handle,display_name,created_at,last_active_at) VALUES (?,?,?,?,?,?)")
+      .run('h_new', 't1', 'new', 'New', now, now)
+    db.prepare("INSERT INTO human(id,team_id,handle,display_name,created_at,last_active_at) VALUES (?,?,?,?,?,?)")
+      .run('h_old_admin', 't1', 'oldadm', 'OldAdm', longAgo, longAgo)
+    db.prepare("INSERT INTO token(id,human_id,token_hash,label,tier,created_at) VALUES (?,?,?,?,?,?)")
+      .run('tk_adm', 'h_old_admin', hashToken('raw-admin'), 'adm', 'admin', longAgo)
+
+    const res = await admin('/purge-inactive', 'POST', { days: 30 })
+    expect(res.status).toBe(200)
+    const j = await res.json() as { purged: string[]; days: number }
+    expect(j.purged).toContain('old')
+    expect(j.purged).not.toContain('new')      // within cutoff
+    expect(j.purged).not.toContain('oldadm')   // active admin token, protected
+  })
+
   it('disables a user', async () => {
     await admin('/users', 'POST', { handle: 'bob', display_name: 'Bob' })
     const res = await admin('/users/bob', 'DELETE')

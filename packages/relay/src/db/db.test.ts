@@ -5,8 +5,13 @@ describe('openDatabase', () => {
   let db: Db
   beforeEach(() => { db = openDatabase(':memory:') })
 
-  it('applies schema and reports version 1', () => {
-    expect(getSchemaVersion(db)).toBe(1)
+  it('applies schema and reports latest version', () => {
+    expect(getSchemaVersion(db)).toBe(2)
+  })
+
+  it('human table has last_active_at column (v2)', () => {
+    const cols = db.pragma('table_info(human)') as Array<{ name: string }>
+    expect(cols.some(c => c.name === 'last_active_at')).toBe(true)
   })
 
   it('has all expected tables', () => {

@@ -21,6 +21,7 @@ async function main() {
   const dbPath = join(dataDir, 'mesh.sqlite')
   const port = Number(process.env.PORT ?? 443)
   const host = process.env.HOST ?? '0.0.0.0'
+  const inactiveDays = Number(process.env.MESH_INACTIVE_DAYS ?? 30)
 
   if (cmd === 'init') {
     if (existsSync(dbPath)) {
@@ -46,7 +47,7 @@ async function main() {
     return
   }
 
-  startServer({ db_path: dbPath, port, host })
+  startServer({ db_path: dbPath, port, host, inactive_days: inactiveDays })
 }
 
 const invokedAsScript = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(process.argv[1]!).href

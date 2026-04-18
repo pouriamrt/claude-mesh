@@ -12,7 +12,21 @@ export function openDatabase(path: string): Db {
   const db = new Database(path)
   const schema = readFileSync(SCHEMA_PATH, 'utf8')
   db.exec(schema)
+  migrateV1ToV2(db)
   return db
+}
+
+/**
+ * Adds `last_active_at` to `human` for existing v1 databases. Fresh databases
+ * get the column from schema.sql directly and this is a no-op.
+ */
+function migrateV1ToV2(db: Db): void {
+  const cols = db.pragma('table_info(human)') as Array<{ name: string }>
+  if (!cols.some(c => c.name === 'last_active_at')) {
+    db.exec('ALTER TABLE human ADD COLUMN last_active_at TEXT')
+    db.exec('UPDATE human SET last_active_at = created_at WHERE last_active_at IS NULL')
+  }
+  db.exec('INSERT OR IGNORE INTO schema_version(version) VALUES (2)')
 }
 
 export function getSchemaVersion(db: Db): number {

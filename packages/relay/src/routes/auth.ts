@@ -51,6 +51,7 @@ export function authRoute(deps: Deps) {
         "INSERT INTO token(id,human_id,token_hash,label,tier,created_at) VALUES (?,?,?,?,?,?)"
       ).run(tokenId, row.human_id, hashToken(raw), parsed.data.device_label, row.tier, nowIso)
       deps.db.prepare("UPDATE pair_code SET consumed_at=? WHERE code_hash=?").run(nowIso, codeHash)
+      deps.db.prepare("UPDATE human SET last_active_at=? WHERE id=?").run(nowIso, row.human_id)
       deps.db.prepare(
         "INSERT INTO audit_log(team_id,at,actor_human_id,event,detail_json) VALUES (?,?,?,?,?)"
       ).run(

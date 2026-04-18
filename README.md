@@ -217,6 +217,7 @@ docker run -d --name mesh-relay --restart unless-stopped \
 | `pair failed: 400 code_consumed` | Paircodes are single-use. Admin runs `mesh admin add-user --handle <h> --force` to revoke old tokens and mint a fresh paircode for the same handle. |
 | `add-user failed: 409 handle_taken` | The handle already exists (possibly disabled). Re-use it: `mesh admin add-user --handle <h> --force` — revokes any existing tokens, invalidates old paircodes, re-enables if disabled, and mints a fresh paircode. **Warning: running `--force` again after pairing will revoke the fresh token you just got.** |
 | `mesh send` returns `401 unauthorized` after a successful `pair` | Before `v0.1.4`, pairing with `--tier admin` gave you an admin-tier token that couldn't use `/v1/messages` (human-tier gated). Upgrade to `v0.1.4` where admin ⊇ human, or re-pair as a human with `mesh admin add-user --handle <h> --force` (no `--tier admin`). |
+| Mesh cluttered with stale offline users | `mesh admin delete-user <handle>` hard-deletes (frees handle for re-add). `mesh admin purge-inactive --days 30` sweeps every user idle that long. Since `v0.1.5` the relay auto-purges every hour (disable with `MESH_INACTIVE_DAYS=0`). Users with active admin tokens are never auto-purged. |
 | `pair failed: 400 invalid_code` | Paircode expired (24h TTL) or malformed. Mint a new one. |
 
 Published automatically from every `v*.*.*` git tag — see [`.github/workflows/publish.yml`](.github/workflows/publish.yml).
@@ -668,6 +669,8 @@ mesh respond <request_id> allow|deny [--reason "..."] [--relay <url>]
 mesh admin bootstrap   --token-file <path>             [--relay <url>]
 mesh admin add-user    --handle <h> [--display-name <n>] [--tier human|admin] [--force] [--relay <url>]
 mesh admin disable-user <handle>                       [--relay <url>]
+mesh admin delete-user  <handle>                       [--relay <url>]   # hard delete, frees handle
+mesh admin purge-inactive [--days 30]                  [--relay <url>]   # delete users idle >N days
 mesh admin revoke-token <token_id>                     [--relay <url>]
 mesh admin audit       [--since <ISO8601>]             [--relay <url>]
 ```

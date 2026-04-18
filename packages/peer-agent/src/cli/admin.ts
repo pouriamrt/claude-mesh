@@ -92,6 +92,33 @@ export async function runAdmin(args: string[]): Promise<void> {
     process.stdout.write(`OK Disabled ${h}\n`)
     return
   }
+  if (sub === 'delete-user') {
+    const h = rest[0]
+    if (!h) throw new Error('usage: mesh admin delete-user <handle>')
+    const url = new URL(`/v1/admin/users/${h}`, relayUrl)
+    url.searchParams.set('hard', 'true')
+    const res = await fetch(url,
+      { method: 'DELETE', headers: { authorization: `Bearer ${adminToken}` } })
+    if (res.status !== 200) throw new Error(`delete failed: ${res.status} ${await res.text()}`)
+    process.stdout.write(`OK Deleted ${h} (row, tokens, paircodes). Handle is now free.\n`)
+    return
+  }
+  if (sub === 'purge-inactive') {
+    const days = Number(argValue(rest, '--days') ?? '30')
+    const res = await fetch(new URL('/v1/admin/purge-inactive', relayUrl), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${adminToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ days }),
+    })
+    if (res.status !== 200) throw new Error(`purge failed: ${res.status} ${await res.text()}`)
+    const r = JSON.parse(await res.text()) as { purged: string[]; days: number }
+    process.stdout.write(
+      r.purged.length === 0
+        ? `OK No users inactive for ${r.days}+ days.\n`
+        : `OK Purged ${r.purged.length} inactive user(s): ${r.purged.join(', ')}\n`
+    )
+    return
+  }
   if (sub === 'revoke-token') {
     const id = rest[0]
     if (!id) throw new Error('usage: mesh admin revoke-token <token_id>')
@@ -108,5 +135,5 @@ export async function runAdmin(args: string[]): Promise<void> {
     process.stdout.write(await res.text() + '\n')
     return
   }
-  throw new Error('commands: bootstrap, add-user, disable-user, revoke-token, audit')
+  throw new Error('commands: bootstrap, add-user, disable-user, delete-user, purge-inactive, revoke-token, audit')
 }

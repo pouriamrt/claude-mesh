@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS human (
   public_key BLOB,
   created_at TEXT NOT NULL,
   disabled_at TEXT,
+  last_active_at TEXT,   -- v2: updated on every authenticated request; drives auto-purge
   UNIQUE(team_id, handle)
 );
 
@@ -81,3 +82,4 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_audit_team_at ON audit_log(team_id, at);
 
 INSERT OR IGNORE INTO schema_version(version) VALUES (1);
+INSERT OR IGNORE INTO schema_version(version) VALUES (2);

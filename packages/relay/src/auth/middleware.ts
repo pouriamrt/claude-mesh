@@ -70,6 +70,12 @@ export function bearerAuth(
     const rank: Record<Tier, number> = { human: 0, admin: 1 }
     if (rank[row.tier] < rank[opts.requireTier]) return c.json({ error: 'unauthorized' }, 401)
 
+    // Stamp last_active_at for every authenticated request. Drives the
+    // inactivity sweep (see startServer). Cheap single-row UPDATE; no need
+    // to throttle at this volume.
+    db.prepare('UPDATE human SET last_active_at=? WHERE id=?')
+      .run(new Date().toISOString(), row.human_id)
+
     c.set('token', { id: row.token_id, human_id: row.human_id, tier: row.tier, label: row.label })
     c.set('human', {
       id: row.human_id,
