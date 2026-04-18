@@ -62,4 +62,26 @@ describe('InboundDispatcher', () => {
     d2.handle(envelope({ id: 'msg_01HRK7Y0000000000000000002', from: 'alice' }))
     expect(cursors[cursors.length - 1]).toBe('msg_01HRK7Y0000000000000000002')
   })
+
+  it('still advances cursor when emit throws (error is logged, not propagated)', () => {
+    const cursors: string[] = []
+    const d3 = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      emit: () => { throw new Error('mcp server detached') },
+      setCursor: id => cursors.push(id),
+    })
+    // Should not throw — handle swallows the emit error after logging it.
+    expect(() => d3.handle(envelope({ id: 'msg_01HRK7Y0000000000000000099' }))).not.toThrow()
+    expect(cursors).toEqual(['msg_01HRK7Y0000000000000000099'])
+  })
+
+  it('tolerates non-Error thrown from emit (String coercion branch)', () => {
+    const d4 = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      emit: () => { throw 'string reason' },
+      setCursor: () => { /* no-op */ },
+    })
+    expect(() => d4.handle(envelope())).not.toThrow()
+  })
 })

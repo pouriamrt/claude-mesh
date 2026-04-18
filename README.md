@@ -599,6 +599,7 @@ Honest state of the repo as of the last commit:
 - **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. The L3 scenario tests are the early-warning system.
 - **Single-region only.** No multi-region HA, no replication.
 - **Admin token is a single-secret failure mode.** Rotate; consider mTLS for admin calls in a future revision.
+- **Peer-agent coverage thresholds are pragmatic, not aspirational.** `shared` hits 100% across the board and `relay` sits comfortably above its gates; `peer-agent` business-logic files (`gate`, `mcp-server`, `instructions`, `reply-limiter`, `approval-routing`, `permission`, `inbound`) are 88-100%, but `tools.ts` / `roots.ts` / `config.ts` validation branches are under-tested and the CLI entry points (`cli/admin.ts`, `cli/pair.ts`, `cli/respond.ts`, `cli/send.ts`) plus the SSE client (`stream.ts`) are excluded from coverage — they're exercised by the L3 harness (`packages/e2e`, gated behind `CLAUDE_DRIVER=cli`). Raising the `peer-agent` thresholds back to 85/80 is a tracked follow-up.
 
 ## License
 

@@ -65,6 +65,35 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.meta.good_key).toBe('y')
     expect(n.params.meta).not.toHaveProperty('bad-key')
   })
+
+  it('includes in_reply_to and thread_root in chat meta when set (truthy branch)', () => {
+    const e = baseEnvelope({
+      in_reply_to: 'msg_01HRK7Y0000000000000000001',
+      thread_root: 'msg_01HRK7Y0000000000000000002'
+    })
+    const n = envelopeToChannelNotification(e)
+    expect(n.params.meta.in_reply_to).toBe('msg_01HRK7Y0000000000000000001')
+    expect(n.params.meta.thread_root).toBe('msg_01HRK7Y0000000000000000002')
+  })
+
+  it('permission_request with empty meta falls through to empty-string defaults', () => {
+    const e = baseEnvelope({ kind: 'permission_request', meta: {} })
+    const n = envelopeToChannelNotification(e)
+    expect(n.params.request_id).toBe('')
+    expect(n.params.tool_name).toBe('')
+    expect(n.params.input_preview).toBe('')
+  })
+
+  it('permission_verdict with no request_id in meta falls through to empty string', () => {
+    const e = baseEnvelope({
+      kind: 'permission_verdict',
+      in_reply_to: 'msg_01HRK7Y0000000000000000001',
+      meta: {}
+    })
+    const n = envelopeToChannelNotification(e)
+    expect(n.params.request_id).toBe('')
+    expect(n.params.behavior).toBe('allow')
+  })
 })
 
 describe('escaping', () => {
