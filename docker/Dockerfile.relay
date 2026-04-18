@@ -10,7 +10,7 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared packages/shared
 COPY packages/relay packages/relay
 RUN pnpm -F @claude-mesh/shared build && pnpm -F @claude-mesh/relay build
-RUN pnpm deploy --filter @claude-mesh/relay --prod /deploy
+RUN pnpm deploy --legacy --filter @claude-mesh/relay --prod /deploy
 
 FROM gcr.io/distroless/nodejs22-debian12:nonroot
 WORKDIR /app
