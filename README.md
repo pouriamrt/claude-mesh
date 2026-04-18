@@ -345,7 +345,21 @@ Send them the pair code over a trusted side channel (Signal, 1Password share, in
 
 ### 8. Wire into Claude Code
 
-Requires **Claude Code v2.1.80+** signed in with `claude.ai` (not API key). The `mesh pair` step in §5 already wrote an entry into `~/.claude.json`:
+Requires **Claude Code v2.1.80+** signed in with `claude.ai` (not API key).
+
+**You must launch Claude Code with the `--dangerously-load-development-channels` flag** so it actually delivers our `notifications/claude/channel` events to the model. Without it, the MCP loads, tools work, but channel tags are silently filtered:
+
+```powershell
+claude --dangerously-load-development-channels server:claude-mesh-peers
+```
+
+If this flag is missing you'll see this line in `%USERPROFILE%\.claude\debug\*.txt`:
+
+```
+MCP server "claude-mesh-peers": Channel notifications skipped: server claude-mesh-peers not in --channels list for this session
+```
+
+The `mesh pair` step in §5 already wrote an entry into `~/.claude.json`:
 
 ```json
 {
@@ -396,6 +410,9 @@ You already redeemed this code. Delete `~/.claude-mesh/token` + `~/.claude-mesh/
 
 **Claude Code doesn't show `send_to_peer` after restart**
 Check `~/.claude.json` contains the `claude-mesh-peers` entry. Check Claude Code version: `claude --version` must be 2.1.80+. Check you're signed in with `claude.ai`, not an API key (`/login`). Check the peer-agent didn't crash: run `claude-mesh-peer-agent` manually — it should spin up an MCP server on stdio and log `{"event":"peer.stream.open"...}` once connected.
+
+**Tools work but `<channel>` tags never arrive in Claude's context**
+You didn't launch Claude Code with `--dangerously-load-development-channels server:claude-mesh-peers`. See §8 above.
 
 **Peer-agent refuses to start with "token file is inside a git worktree with a remote"**
 Intentional. The default token path is `~/.claude-mesh/token`, which should be outside any git checkout. If you moved it into a cloned repo, move it back, or remove the remote (`git remote remove origin`) if this is an intentional private clone.
