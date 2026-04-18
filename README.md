@@ -1,10 +1,17 @@
 # claude-mesh
 
+[![CI](https://github.com/pouriamrt/claude-mesh/actions/workflows/ci.yml/badge.svg)](https://github.com/pouriamrt/claude-mesh/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org)
+[![pnpm](https://img.shields.io/badge/pnpm-10-F69220?logo=pnpm&logoColor=white)](https://pnpm.io)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![MCP](https://img.shields.io/badge/MCP-claude%2Fchannel-6b46c1)](https://code.claude.com/docs/en/channels-reference)
+
 **Networked Claude-to-Claude messaging over HTTP + MCP channels.**
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md) (33 tasks, 151 tests passing). **Not yet run end-to-end against real Claude Code.** See [Caveats](#caveats).
+> **Status:** software-complete (33 tasks, 151 tests passing) per the [implementation plan](docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 
 ## Table of contents
 
@@ -519,7 +526,7 @@ See [docs/SECURITY.md](docs/SECURITY.md) for the threat model, layered defenses,
 
 Honest state of the repo as of the last commit:
 
-- **Never run against real Claude Code.** The L3 scenario tests that would exercise `send_to_peer` end to end (`dm.test.ts`, `broadcast.test.ts`) are gated behind `CLAUDE_DRIVER=cli` and skip by default. Before relying on this in a trusted team, smoke-test with two real Claude sessions first.
+- **Inbound flow verified, outbound not yet.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — is verified end-to-end (Windows 11, Claude Code v2.1.80+, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch). The outbound flow (Claude asking a teammate for permission via `send_to_peer`) is unit-tested but has not been smoke-tested across two real Claude sessions; the L3 scenario tests (`dm.test.ts`, `broadcast.test.ts`) remain gated behind `CLAUDE_DRIVER=cli` and skip by default.
 - **Docker image not yet built.** `docker/Dockerfile.relay` is written but `docker build` has never actually run. Expect a first-run iteration.
 - **Outbound permission_request flow incomplete.** The `ApprovalRouter` class and DM-recency tracking are implemented and unit-tested; the MCP `setNotificationHandler` that would turn a Claude Code → peer-agent `permission_request` notification into an outbound envelope (plan Task 24 Step 3) is not wired. `respond_to_permission` (the verdict path) works; initiating a request from CC needs one more bit of wiring.
 - **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. The L3 scenario tests are the early-warning system.

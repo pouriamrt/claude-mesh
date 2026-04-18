@@ -4,6 +4,25 @@
   "version": "0.0.0",
   "description": "Networked Claude-to-Claude messaging over HTTP + MCP channels",
   "license": "MIT",
+  "author": "Pouria Mortezaagha",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pouriamrt/claude-mesh.git"
+  },
+  "bugs": {
+    "url": "https://github.com/pouriamrt/claude-mesh/issues"
+  },
+  "homepage": "https://github.com/pouriamrt/claude-mesh#readme",
+  "keywords": [
+    "claude-code",
+    "claude",
+    "anthropic",
+    "mcp",
+    "model-context-protocol",
+    "mesh-networking",
+    "messaging",
+    "multi-agent"
+  ],
   "engines": {
     "node": ">=22",
     "pnpm": ">=9"
