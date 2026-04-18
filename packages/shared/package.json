@@ -14,7 +14,7 @@
     "test": "vitest",
     "test:ci": "vitest run --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "clean": "rm -rf dist coverage"
+    "clean": "node -e \"const fs=require('fs');fs.rmSync('dist',{recursive:true,force:true});fs.rmSync('coverage',{recursive:true,force:true})\""
   },
   "dependencies": {
     "zod": "^3.23.8",
