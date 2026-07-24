@@ -6,86 +6,76 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `claude-mesh` is a **networked messaging substrate for Claude Code instances**: a self-hosted HTTP relay + per-Claude MCP channel server that lets Claudes on different machines DM, broadcast, thread, and approve tool-permissions for each other. Built on Anthropic's research-preview `claude/channel` MCP extension.
 
-The project is in active construction — only the foundation + shared package are implemented. The spec and plan are the source of truth:
+**Status: software-complete and released.** All 33 plan tasks are done; the relay ships as a Docker image (`ghcr.io/pouriamrt/claude-mesh/relay`, published on `v*.*.*` tags). Inbound `<channel>` tag delivery is verified against real Claude Code (v2.1.80+). Outbound permission_request relay is wired and unit-tested but not yet smoke-tested across two live Claude sessions. Remaining known gaps are listed in README §Caveats — keep that section honest when you change them.
 
-- **Spec** (what we're building): `docs/superpowers/specs/2026-04-17-claude-mesh-design.md`
-- **Plan** (how — 33 TDD tasks across 9 phases): `docs/superpowers/plans/2026-04-17-claude-mesh-implementation.md`
-
-Resuming work: start at **Task 5** (relay scaffold). Tasks 1–4 are done; the plan has been patched for two gotchas found during Task 1–4 execution (see §Gotchas below).
+The original design docs live in `docs/superpowers/` (spec + 33-task plan) but `docs/` is **gitignored** — local-only. README.md is the public source of truth.
 
 ## Commands
 
-The repo is a **pnpm 10 workspace**. Node ≥22. Run from the repo root.
+The repo is a **pnpm 10 workspace**. Node 22 or 24 (25 lacks prebuilt `better-sqlite3`). Run from the repo root.
 
 ```bash
 pnpm install                                   # install all workspace deps
 pnpm -r build                                  # build every package
 pnpm -r typecheck                              # tsc --noEmit across the workspace
-pnpm -r test                                   # vitest watch across packages
+pnpm -r exec vitest run                        # full suite (~187 tests; e2e L3 scenarios skip without CLAUDE_DRIVER)
 pnpm -r test:ci                                # vitest run + coverage thresholds
 
 # Scope to one package:
-pnpm -F @claude-mesh/shared exec vitest run
+pnpm -F @claude-mesh/relay exec vitest run
 pnpm -F @claude-mesh/shared exec vitest run channel          # single test file
 pnpm -F @claude-mesh/shared exec vitest run -t "round-trip"  # single test name
-pnpm -F @claude-mesh/shared exec tsc -p tsconfig.json --noEmit
+
+# L3 end-to-end against a real claude binary:
+CLAUDE_DRIVER=cli pnpm -F @claude-mesh/e2e exec vitest run
 ```
 
-Vitest coverage thresholds (enforced in `vitest.config.ts`): **95 % lines on `shared`, 85 % on relay/peer-agent.** These are wired as CI gates in the plan, not just documentation.
+Coverage thresholds (enforced in each package's `vitest.config.ts`): 95% lines on `shared`, 85% on `relay`; `peer-agent` gates are lower (CLI entry points + SSE client excluded — exercised by the L3 harness instead).
 
 ## Architecture (big picture)
 
-### Three deployable units (per spec §1)
-
 ```
-Claude Code ──stdio──▶ peer-agent (MCP channel server) ──HTTPS──▶ relay (Hono + SQLite)
+Claude Code ──stdio──▶ peer-agent (MCP channel server) ──HTTPS/SSE──▶ relay (Hono + SQLite)
 ```
 
-1. **`@claude-mesh/shared`** (done) — zod envelope schema, `<channel>` notification serializer, ULID message IDs, shared constants. Pure types and validators; no IO. *Both other packages depend on this.*
-2. **`@claude-mesh/relay`** (not started, Tasks 5–16, 22) — stateless-ish HTTP server. Hono + `better-sqlite3` + SSE. Routes: `POST /v1/messages` (with `Idempotency-Key`), `GET /v1/stream` (SSE with `?since=<ulid>` resume), `POST /v1/presence`, `GET /v1/peers`, `POST /v1/auth/{pair,revoke}`, `POST /v1/permission/respond`, `GET/DELETE /v1/admin/*`. In-memory fanout registry; SQLite for durable message buffering.
-3. **`@claude-mesh/peer-agent`** (not started, Tasks 17–27, 33) — stdio MCP server declaring the `experimental['claude/channel']` capability. Pushes inbound peer messages into Claude's context as `<channel source="peers" ...>` tags via `notifications/claude/channel`. Exposes MCP tools `send_to_peer`, `list_peers`, `set_summary`, optionally `respond_to_permission`.
+1. **`@claude-mesh/shared`** — zod envelope schema (the wire format), `<channel>` serializer, monotonic ULID helpers, constants. Pure types/validators, no IO.
+2. **`@claude-mesh/relay`** — Hono + better-sqlite3 + SSE. Routes: `POST /v1/messages` (Idempotency-Key), `GET /v1/stream?since=<ulid>`, `POST /v1/presence`, `GET /v1/peers`, `POST /v1/auth/pair`, `POST /v1/permission/respond`, `/v1/admin/*`. In-memory fanout registry; SQLite for durable buffering.
+3. **`@claude-mesh/peer-agent`** — stdio MCP server declaring `experimental['claude/channel']` (+ `claude/channel/permission` when enabled). Inbound: SSE → `InboundDispatcher` → `notifications/claude/channel*`. Outbound: MCP tools `send_to_peer`, `list_peers`, `set_summary`, `respond_to_permission`, plus the `notifications/claude/channel/permission_request` client-notification handler (`permission-outbound.ts`) that fans approval requests out per `approval_routing`. Also home of the `mesh` CLI (`pair`, `send`, `respond`, `admin ...`).
+4. **`@claude-mesh/e2e`** — L3 harness: in-memory relay + paired humans; scenario tests gated behind `CLAUDE_DRIVER`.
 
 ### Key invariants to preserve
 
-- **`from` is server-populated from the token** on every message. Peer-agents cannot set it. This is the primary defense against impersonation.
-- **ULIDs are monotonic** (see `src/ulid.ts` — uses `monotonicFactory()`). The SSE resume cursor is `WHERE id > ?`, which relies on strict ordering even for IDs generated within the same millisecond.
-- **`<channel>` body escaping** in `channel.ts` prevents peer content from forging sibling tags. A property test (500 runs) asserts escaped bodies never contain the literal `</channel>`.
-- **Envelope is *the* wire format.** One schema (`EnvelopeSchema`), four `kind`s (`chat`, `presence_update`, `permission_request`, `permission_verdict`). All HTTP bodies and SSE payloads go through it. The same zod schema is used by both relay and peer-agent — a shape change is a compile error in both at once.
-- **`permission_verdict` requires `in_reply_to`** pointing at the original `permission_request` envelope; this is enforced by `superRefine` in `EnvelopeSchema`.
+- **`from` is server-populated from the token** on every message. Peer-agents cannot set it. Primary anti-impersonation defense.
+- **ULIDs are monotonic** (`shared/src/ulid.ts` uses `monotonicFactory()`). The SSE resume cursor is `WHERE id > ?` and relies on strict ordering within a millisecond.
+- **`<channel>` body escaping** (`shared/src/channel.ts`) prevents forged sibling tags; a 500-run property test asserts escaped bodies never contain `</channel>`.
+- **Envelope is *the* wire format.** One `EnvelopeSchema`, four kinds (`chat`, `presence_update`, `permission_request`, `permission_verdict`). `permission_verdict` requires `in_reply_to` (enforced via `superRefine`).
+- **Permission outbound never throws.** `relayPermissionRequest` swallows bad params and relay outages — the local approval dialog must survive anything the mesh does.
 
 ### Prompt-injection threat model
 
-Peer messages end up in Claude's context. The `instructions` string on the peer-agent's MCP server explicitly downgrades peer `content` to "untrusted user input" and carries a four-point safety charter (see spec §6 and the exact text in `packages/peer-agent/src/instructions.ts` once Task 17 lands). **Do not weaken this wording** without reading spec §6 — it's load-bearing.
+Peer messages land in Claude's context. The `instructions` string in `packages/peer-agent/src/instructions.ts` downgrades peer content to "untrusted user input" with a four-point safety charter. **Do not weaken this wording.** Sender gating (roster check), `claude/channel/permission` off by default, and `approval_routing = never_relay` by default are layered defenses (spec §6, summarized in README §Security model).
 
-Sender gating (roster-check every inbound against `/v1/peers`), `claude/channel/permission` off by default, and `approval_routing = never_relay` by default are all layered defenses. See spec §6 layers L1–L5.
+## TDD discipline
 
-## TDD discipline (mandated by the plan)
-
-Each of the 33 tasks is a TDD cycle: **write failing test → confirm RED → implement → confirm GREEN → commit**. One atomic commit per task, conventional-commits style (`feat(scope):`, `chore:`, etc.). Do not batch tasks into one commit.
-
-If you discover a plan bug during execution (like the two in §Gotchas), fix the code, fix the plan file inline, and include both in the same commit with a `\n\n` explanation paragraph so the next executor inherits the fix.
+Every change is a TDD cycle: **failing test → RED → implement → GREEN → one atomic conventional commit** (`feat(scope):`, `fix:`, `docs:` ...). Don't batch unrelated changes. If a change breaks an existing test, fix the root cause — never weaken the test.
 
 ## Windows-specific notes
 
-Developed on Windows 11 + Git Bash. A few quirks worth knowing:
+- `warning: LF will be replaced by CRLF` on `git add` is cosmetic.
+- Forward slashes in paths inside commands; `\` breaks Git Bash tools.
+- Node's `homedir()` reads `USERPROFILE` on Windows — running two mesh identities on one machine requires overriding `USERPROFILE` for one of them (no `MESH_HOME` var yet).
+- `better-sqlite3` needs MSVC Build Tools if no prebuilt binding matches your Node.
 
-- **`warning: LF will be replaced by CRLF`** appears on every `git add` of a new file. Cosmetic — git's normalization layer, not an error.
-- Use forward slashes in paths inside commands; many tools break on `\`.
-- Node 25 and pnpm 10 are the *installed* versions here even though `package.json` declares `>=22` / `>=9` — run what's installed, don't downgrade.
-- `better-sqlite3` (will be installed in Task 5) pulls a native binding and may require MSVC Build Tools on first install. If install fails, that's the likely reason.
+## Gotchas already paid for (don't re-hit)
 
-## Gotchas (plan-integrity fixes already landed)
-
-Two real bugs caught by the tests during Task 1–4 execution, both patched back into the plan so future executors don't re-hit them:
-
-1. **`ulid()` is not monotonic.** The default `ulid` export from the `ulid` package doesn't guarantee strict ordering within a single millisecond — two IDs generated in the same tick can land out of order. Use `monotonicFactory()` (see `packages/shared/src/ulid.ts`). The SSE resume cursor depends on this invariant.
-2. **TS 5.7+ requires explicit flags for `.ts`-suffixed imports.** The plan's convention of `import './foo.ts'` fails typecheck under default settings. `tsconfig.base.json` now sets `allowImportingTsExtensions: true` and `rewriteRelativeImportExtensions: true` so the build can still emit `.js`.
-
-If subsequent tasks break the existing test suite, **fix the root cause** — don't weaken the failing test.
+1. **`ulid()` default export is not monotonic** — use `monotonicFactory()` (done in `shared/src/ulid.ts`). SSE resume depends on it.
+2. **TS 5.7+ needs `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`** for the `import './foo.ts'` convention (set in `tsconfig.base.json`).
+3. **MCP SDK ≥1.29 is typed against `zod/v4`.** Extending SDK schemas (e.g. `NotificationSchema.extend`) requires `import { z } from 'zod/v4'` — the v3 root export fails typecheck with a missing `_zod` property.
+4. **Channel notifications are silently dropped** unless Claude Code launches with `--dangerously-load-development-channels server:claude-mesh-peers`. The only trace is a "Channel notifications skipped" line in `~/.claude/debug/*.txt`.
 
 ## What *not* to do
 
-- **Don't commit tokens, `admin.token`, `*.paircode`, or `.claude-mesh/` directories.** `.gitignore` covers them; the peer-agent will additionally refuse to start if its token file lives in a git worktree with a remote (see plan Task 18).
-- **Don't change the `<channel>` tag shape or the `instructions` string** without re-reading spec §4 and §6. Both are security-critical surfaces.
-- **Don't skip the reviewer / typecheck / test gates** between tasks. They caught two real bugs in Phase 1; they will catch more.
-- **Don't assume `claude/channel` behavior from training data.** It's a research-preview feature; the authoritative reference is <https://code.claude.com/docs/en/channels-reference>. Requires Claude Code v2.1.80+ (v2.1.81+ for permission relay) and `claude.ai` login.
+- **Don't commit tokens, `admin.token`, `*.paircode`, or `.claude-mesh/` dirs.** `.gitignore` covers them; the peer-agent refuses to start if its token file sits in a git worktree with a remote.
+- **Don't change the `<channel>` tag shape or the `instructions` string** without re-reading the threat model. Both are security-critical surfaces.
+- **Don't skip typecheck / test gates.** They have caught real bugs at every phase.
+- **Don't assume `claude/channel` behavior from training data.** Research-preview; authoritative reference is <https://code.claude.com/docs/en/channels-reference>. v2.1.80+ (v2.1.81+ for permission relay), claude.ai login required.
