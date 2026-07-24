@@ -80,6 +80,26 @@ describe('relayPermissionRequest', () => {
     expect(send).toHaveBeenCalledTimes(1)
   })
 
+  it('refuses to relay when selfHandle is empty (unattributable request)', async () => {
+    const { sent, send } = makeSend()
+    const o = { ...opts('ask_specific_peer:bob', send), selfHandle: '' }
+    const n = await relayPermissionRequest(params, o)
+    expect(n).toBe(0)
+    expect(sent).toHaveLength(0)
+  })
+
+  it('clips oversized description so the envelope stays under MAX_CONTENT_BYTES', async () => {
+    const { sent, send } = makeSend()
+    const huge = 'é'.repeat(70_000) // 140 000 bytes utf8
+    await relayPermissionRequest(
+      { ...params, description: huge },
+      opts('ask_specific_peer:bob', send)
+    )
+    expect(sent).toHaveLength(1)
+    expect(Buffer.byteLength(sent[0]!.content, 'utf8')).toBeLessThanOrEqual(65536)
+    expect(sent[0]!.content.length).toBeGreaterThan(0)
+  })
+
   it('exports the channels-native notification method name', () => {
     expect(PERMISSION_REQUEST_NOTIFICATION_METHOD).toBe(
       'notifications/claude/channel/permission_request'

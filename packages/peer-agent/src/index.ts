@@ -70,6 +70,8 @@ async function main(): Promise<void> {
     })
   }
 
+  server.onerror = err => { logJson('error', 'peer.mcp.error', describeError(err)) }
+
   logJson('info', 'peer.startup', { relay_url: cfg.relay_url })
 
   // Seed the roster. Failing here used to crash the peer-agent hard, breaking
@@ -95,6 +97,7 @@ async function main(): Promise<void> {
     setCursor: id => { cursor = id },
     permissionTracker,
     replyLimiter,
+    recordDm: h => approvalRouter.recordDm(h),
   })
 
   const stream = new StreamClient({

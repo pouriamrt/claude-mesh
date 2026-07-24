@@ -34,6 +34,20 @@ describe('InboundDispatcher', () => {
     expect(sent).toHaveLength(0)
   })
 
+  it('records gated inbound chats as DM partners for approval routing', () => {
+    const recorded: string[] = []
+    d = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      emit: () => { /* no-op */ },
+      setCursor: () => { /* no-op */ },
+      recordDm: h => { recorded.push(h) },
+    })
+    d.handle(envelope({ from: 'alice', kind: 'chat' }))
+    d.handle(envelope({ from: 'mallory', kind: 'chat' }))      // gated: not recorded
+    d.handle(envelope({ from: 'alice', kind: 'presence_update' })) // not a chat: not recorded
+    expect(recorded).toEqual(['alice'])
+  })
+
   it('maps kind=permission_request to correct method', () => {
     d.handle(envelope({
       kind: 'permission_request',

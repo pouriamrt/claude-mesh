@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Envelope, OutboundMessage } from '@claude-mesh/shared'
-import { MAX_META_VALUE_LENGTH } from '@claude-mesh/shared'
+import { MAX_META_VALUE_LENGTH, MAX_CONTENT_BYTES } from '@claude-mesh/shared'
 import type { ApprovalRouter } from './approval-routing.ts'
 import { logJson } from './logger.ts'
 
@@ -25,6 +25,13 @@ export interface PermissionOutboundOpts {
 
 const clip = (s: string): string => s.slice(0, MAX_META_VALUE_LENGTH)
 
+function clipContent(s: string): string {
+  if (Buffer.byteLength(s, 'utf8') <= MAX_CONTENT_BYTES) return s
+  let out = s.slice(0, MAX_CONTENT_BYTES)
+  while (Buffer.byteLength(out, 'utf8') > MAX_CONTENT_BYTES) out = out.slice(0, -1)
+  return out
+}
+
 /**
  * Turn a Claude Code permission_request notification into outbound
  * kind=permission_request envelopes, per the approval_routing policy.
@@ -41,12 +48,18 @@ export async function relayPermissionRequest(
     return 0
   }
   const p = parsed.data
+  if (!opts.selfHandle) {
+    // meta.requester is the only attribution the receiving side sees on a
+    // permission dialog; never relay a request nobody can attribute.
+    logJson('warn', 'peer.permission.outbound_no_self_handle', { request_id: p.request_id })
+    return 0
+  }
   const targets = opts.router.pick({ excludeSelf: opts.selfHandle })
   if (!targets) return 0
 
   const nowMs = (opts.now?.() ?? new Date()).getTime()
   const expires_at = new Date(nowMs + opts.ttlMs).toISOString()
-  const content = p.description || `${p.tool_name}: ${p.input_preview}`
+  const content = clipContent(p.description || `${p.tool_name}: ${p.input_preview}`)
   let relayed = 0
   for (const to of targets) {
     try {

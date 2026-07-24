@@ -11,6 +11,8 @@ export interface InboundDispatcherOpts {
   setCursor: (id: string) => void
   permissionTracker?: PermissionTracker | undefined
   replyLimiter?: ReplyLimiter | undefined
+  /** Called for gated inbound chats so approval routing sees both directions of a thread (spec §5). */
+  recordDm?: ((handle: string) => void) | undefined
 }
 
 export class InboundDispatcher {
@@ -22,6 +24,7 @@ export class InboundDispatcher {
       logJson('warn', 'peer.inbound.sender_gate_drop', { from: e.from, msg_id: e.id })
       return
     }
+    if (e.kind === 'chat') this.opts.recordDm?.(e.from)
     if (e.kind === 'permission_request' && this.opts.permissionTracker) {
       const rid = e.meta.request_id ?? ''
       if (rid) this.opts.permissionTracker.recordIncoming(rid, e.id, e.from)
