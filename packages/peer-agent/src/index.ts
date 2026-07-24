@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { ListToolsRequestSchema, CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
+import { ListToolsRequestSchema, CallToolRequestSchema, NotificationSchema } from '@modelcontextprotocol/sdk/types.js'
+import { z as z4 } from 'zod/v4'
 import { PERMISSION_REQUEST_TTL_MS } from '@claude-mesh/shared'
 import { createMcpServer } from './mcp-server.ts'
 import { loadConfig, loadToken, assertTokenNotInRepo } from './config.ts'
@@ -11,6 +12,7 @@ import { InboundDispatcher } from './inbound.ts'
 import { StreamClient } from './stream.ts'
 import { PermissionTracker } from './permission.ts'
 import { ApprovalRouter, type RoutingPolicy } from './approval-routing.ts'
+import { relayPermissionRequest, PERMISSION_REQUEST_NOTIFICATION_METHOD } from './permission-outbound.ts'
 import { ReplyLimiter } from './reply-limiter.ts'
 import { pathToFileURL } from 'node:url'
 import { logJson } from './logger.ts'
@@ -50,6 +52,23 @@ async function main(): Promise<void> {
       return { content: [{ type: 'text', text: `error: ${message}` }], isError: true }
     }
   })
+
+  if (permissionRelayEnabled) {
+    // Spec §5 step (2): Claude Code notifies us when its local approval dialog
+    // opens; we fan the request out per approval_routing. Never throws — the
+    // local dialog must survive relay outages.
+    const PermissionRequestNotification = NotificationSchema.extend({
+      method: z4.literal(PERMISSION_REQUEST_NOTIFICATION_METHOD),
+    })
+    server.setNotificationHandler(PermissionRequestNotification, async n => {
+      await relayPermissionRequest(n.params, {
+        router: approvalRouter,
+        send: m => client.send(m),
+        selfHandle: cfg.self_handle ?? '',
+        ttlMs: PERMISSION_REQUEST_TTL_MS,
+      })
+    })
+  }
 
   logJson('info', 'peer.startup', { relay_url: cfg.relay_url })
 

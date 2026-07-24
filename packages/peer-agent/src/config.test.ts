@@ -26,6 +26,15 @@ describe('loadConfig', () => {
     writeFileSync(p, JSON.stringify({ relay_url: 'x' }))
     expect(() => loadConfig(p)).toThrow()
   })
+
+  it('surfaces self_handle written by mesh pair', () => {
+    const p = join(workdir, 'config.json')
+    writeFileSync(p, JSON.stringify({
+      relay_url: 'https://mesh.example.com', token_path: join(workdir, 'tok'),
+      self_handle: 'alice'
+    }))
+    expect(loadConfig(p).self_handle).toBe('alice')
+  })
 })
 
 describe('loadToken', () => {

@@ -7,6 +7,7 @@ import { readTokenFile } from './cli/token-file.ts'
 export const ConfigSchema = z.object({
   relay_url: z.string().url(),
   token_path: z.string(),
+  self_handle: z.string().optional(),
   admin_token_path: z.string().optional(),
   permission_relay: z.object({
     enabled: z.boolean().default(false),
