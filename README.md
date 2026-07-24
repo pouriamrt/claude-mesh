@@ -11,7 +11,9 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete (33 tasks, 151 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+> **Status:** software-complete (33 tasks, 187 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+>
+> Building on the `claude/channel` preview yourself? Our field notes for the Claude Code team are in [CHANNELS-FEEDBACK.md](./CHANNELS-FEEDBACK.md).
 
 ---
 
@@ -742,12 +744,13 @@ flowchart TB
 - Reply-storm limiter: `send_to_peer` capped at 2 replies per inbound peer message within 10 seconds.
 - Tokens are never logged, never passed as env vars to child processes, never exposed to the LLM.
 
+Full threat model, reporting process, and known limitations: [SECURITY.md](./SECURITY.md).
+
 ## Caveats
 
 Honest state of the repo as of the last commit:
 
-- **Inbound flow verified, outbound not yet.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — is verified end-to-end (Windows 11, Claude Code v2.1.80+, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch). The outbound flow (Claude asking a teammate for permission via `send_to_peer`) is unit-tested but has not been smoke-tested across two real Claude sessions; the L3 scenario tests (`dm.test.ts`, `broadcast.test.ts`) remain gated behind `CLAUDE_DRIVER=cli` and skip by default.
-- **Outbound permission_request flow incomplete.** The `ApprovalRouter` class and DM-recency tracking are implemented and unit-tested; the MCP `setNotificationHandler` that would turn a Claude Code → peer-agent `permission_request` notification into an outbound envelope is not wired. `respond_to_permission` (the verdict path) works; initiating a request from CC needs one more bit of wiring.
+- **Inbound flow verified live, outbound unit-tested only.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — is verified end-to-end (Windows 11, Claude Code v2.1.80+, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch). The outbound flows (Claude replying via `send_to_peer`, Claude originating a `permission_request` via the `notifications/claude/channel/permission_request` handler in `permission-outbound.ts`) are fully wired and unit-tested but have not been smoke-tested across two real Claude sessions; the L3 scenario tests (`dm.test.ts`, `broadcast.test.ts`) remain gated behind `CLAUDE_DRIVER=cli` and skip by default.
 - **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. The L3 scenario tests are the early-warning system.
 - **Single-region only.** No multi-region HA, no replication.
 - **Admin token is a single-secret failure mode.** Rotate; consider mTLS for admin calls in a future revision.
@@ -764,7 +767,7 @@ Issues and PRs welcome. Before filing:
 1. Check [open issues](https://github.com/pouriamrt/claude-mesh/issues) and [Caveats](#caveats) — some gaps are known.
 2. Run `pnpm -r typecheck && pnpm -r exec vitest run` before pushing. Coverage thresholds are enforced.
 3. Follow the TDD rhythm the existing commits show: failing test → implementation → commit. One atomic commit per change.
-4. Security issues: email rather than filing a public issue.
+4. Security issues: use [private vulnerability reporting](./SECURITY.md) rather than filing a public issue.
 
 ## Acknowledgments
 
