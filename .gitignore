@@ -37,3 +37,6 @@ coverage/
 
 # local-only design docs (spec, plan, deploy/security notes)
 docs/
+
+# sentrux local sensor data
+.sentrux/
