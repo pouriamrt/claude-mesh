@@ -28,10 +28,12 @@ export function permissionRoute(deps: Deps) {
     const team = c.get('team_id')
     const me = c.get('human').handle
 
+    // to_handle='@team' covers ask_team routing: a broadcast request is
+    // answerable by any team human, first verdict wins (spec §5).
     const rows = deps.db.prepare(`
       SELECT id, content, from_handle, meta_json
       FROM message
-      WHERE team_id=? AND kind='permission_request' AND to_handle=?
+      WHERE team_id=? AND kind='permission_request' AND to_handle IN (?, '@team')
       ORDER BY id DESC LIMIT 50
     `).all(team, me) as RequestRow[]
 

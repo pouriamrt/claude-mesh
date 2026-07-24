@@ -64,6 +64,23 @@ describe('POST /v1/permission/respond', () => {
     expect(JSON.parse(verdict.meta_json).reason).toBe('looked at diff')
   })
 
+  it('lets any team human answer an @team-broadcast request (ask_team routing)', async () => {
+    await post('/v1/messages', t.a, {
+      to: '@team', kind: 'permission_request', content: 'delete build output',
+      meta: { request_id: 'abcde', tool_name: 'Bash', input_preview: 'rm -rf dist/',
+              requester: 'alice', expires_at: new Date(Date.now()+60_000).toISOString() }
+    })
+    const res = await post('/v1/permission/respond', t.b,
+      { request_id: 'abcde', verdict: 'deny', reason: 'not during release' })
+    expect(res.status).toBe(200)
+    const verdict = db.prepare(
+      "SELECT * FROM message WHERE kind='permission_verdict'"
+    ).get() as any
+    expect(verdict.to_handle).toBe('alice')
+    expect(verdict.from_handle).toBe('bob')
+    expect(JSON.parse(verdict.meta_json).behavior).toBe('deny')
+  })
+
   it('rejects expired request', async () => {
     await post('/v1/messages', t.a, {
       to: 'bob', kind: 'permission_request', content: 'x',
