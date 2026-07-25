@@ -14,6 +14,8 @@
 > **Status:** software-complete (33 tasks, 191 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 >
 > Building on the `claude/channel` preview yourself? Our field notes for the Claude Code team are in [CHANNELS-FEEDBACK.md](./CHANNELS-FEEDBACK.md).
+>
+> ▶ **[Watch the 30-second live demo](./assets/demo.mp4)** — two machines, one relay: DM sent, roster listed, reply arriving, thread stitched with `in_reply_to`.
 
 ---
 
