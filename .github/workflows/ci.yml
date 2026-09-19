@@ -5,6 +5,7 @@ on:
   pull_request:
   schedule:
     - cron: '0 6 * * *'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -45,9 +46,17 @@ jobs:
           tags: claude-mesh/relay:ci
 
   e2e:
-    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'e2e')
+    if: >-
+      github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+      || contains(github.event.pull_request.labels.*.name, 'e2e')
     needs: test
     runs-on: ubuntu-latest
+    # L3 driver scenarios spawn a real `claude` binary, which needs Claude Code
+    # installed AND credentials. Set either secret to enable them; with neither,
+    # canDrive() is false and those scenarios skip instead of failing the run.
+    env:
+      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -55,6 +64,9 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm -F @claude-mesh/shared build && pnpm -F @claude-mesh/relay build && pnpm -F @claude-mesh/peer-agent build
+      - name: Install Claude Code
+        if: env.CLAUDE_CODE_OAUTH_TOKEN != '' || env.ANTHROPIC_API_KEY != ''
+        run: npm i -g @anthropic-ai/claude-code
       - run: pnpm -F @claude-mesh/e2e test:ci
         env:
-          CLAUDE_DRIVER: cli
+          CLAUDE_DRIVER: ${{ (env.CLAUDE_CODE_OAUTH_TOKEN != '' || env.ANTHROPIC_API_KEY != '') && 'cli' || '' }}
