@@ -18,7 +18,7 @@ The repo is a **pnpm 10 workspace**. Node 22 or 24 (25 lacks prebuilt `better-sq
 pnpm install                                   # install all workspace deps
 pnpm -r build                                  # build every package
 pnpm -r typecheck                              # tsc --noEmit across the workspace
-pnpm -r exec vitest run                        # full suite (~191 tests; e2e L3 scenarios skip without CLAUDE_DRIVER)
+pnpm -r exec vitest run                        # full suite (~193 tests; e2e L3 scenarios skip without CLAUDE_DRIVER)
 pnpm -r test:ci                                # vitest run + coverage thresholds
 
 # Scope to one package:

@@ -26,10 +26,25 @@ export async function drive(opts: DriveOpts): Promise<string> {
       env: { ...process.env, ...opts.env, HOME: opts.cwd },
     })
     let out = ''
+    let timedOut = false
+    let timer: NodeJS.Timeout | undefined
+    const settle = (fn: () => void) => { if (timer) clearTimeout(timer); fn() }
+
     p.stdout.on('data', d => { out += d.toString() })
-    p.on('close', code => code === 0 ? resolve(out) : reject(new Error(`claude exited ${code}: ${out}`)))
+    // A failed spawn (ENOENT when Claude Code isn't installed) reports here, never on 'close'.
+    p.on('error', err => settle(() => reject(err)))
+    p.on('close', code => settle(() => {
+      if (timedOut) reject(new Error(`claude timed out after ${opts.timeoutMs}ms: ${out}`))
+      else if (code === 0) resolve(out)
+      else reject(new Error(`claude exited ${code}: ${out}`))
+    }))
+    // stdin is already destroyed when the spawn failed; 'error' above owns the rejection.
+    p.stdin.on('error', () => {})
     p.stdin.end(opts.prompt)
-    if (opts.timeoutMs) setTimeout(() => p.kill('SIGKILL'), opts.timeoutMs).unref()
+    if (opts.timeoutMs) {
+      timer = setTimeout(() => { timedOut = true; p.kill('SIGKILL') }, opts.timeoutMs)
+      timer.unref()
+    }
   })
 }
 
