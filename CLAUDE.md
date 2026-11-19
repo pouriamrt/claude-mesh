@@ -18,7 +18,7 @@ The repo is a **pnpm 10 workspace**. Node 22 or 24 (25 lacks prebuilt `better-sq
 pnpm install                                   # install all workspace deps
 pnpm -r build                                  # build every package
 pnpm -r typecheck                              # tsc --noEmit across the workspace
-pnpm -r exec vitest run                        # full suite (~203 tests)
+pnpm -r exec vitest run                        # full suite (~211 tests)
 pnpm -r test:ci                                # vitest run + coverage thresholds
 
 # Scope to one package:
@@ -42,10 +42,11 @@ Claude Code ──stdio──▶ peer-agent (MCP channel server) ──HTTPS/SSE
 
 ### Key invariants to preserve
 
-- **`from` is server-populated from the token** on every message. Peer-agents cannot set it, and the `<channel>` serializer strips reserved sender meta keys (`from`, `msg_id`, `in_reply_to`, `thread_root`, `source`, `kind`, `requester`) so meta can never shadow it. Primary anti-impersonation defense.
+- **`from` is server-populated from the token** on every message. Peer-agents cannot set it, and the `<channel>` serializer strips reserved sender meta keys (`from`, `msg_id`, `in_reply_to`, `thread_root`, `source`, `kind`, `requester`, plus the permission-prompt keys on chats) so meta can never shadow it. Primary anti-impersonation defense.
 - **ULIDs are monotonic** (`shared/src/ulid.ts` uses `monotonicFactory()`). The SSE resume cursor is `WHERE id > ?` and relies on strict ordering within a millisecond.
 - **`<channel>` body escaping** (`shared/src/channel.ts`) prevents forged sibling tags; a 500-run property test asserts escaped bodies never contain `</channel>`.
-- **Envelope is *the* wire format.** One `EnvelopeSchema`, four kinds (`chat`, `presence_update`, `permission_request`, `permission_verdict`). `permission_verdict` requires `in_reply_to` (enforced via `superRefine`).
+- **Envelope is *the* wire format.** One `EnvelopeSchema`, four kinds (`chat`, `presence_update`, `permission_request`, `permission_verdict`). `permission_verdict` requires `in_reply_to` (enforced via `superRefine`), and `MessageStore.insert` only accepts one that answers a live `permission_request` routed to its sender — the requester's peer-agent forwards every verdict it gets, so this relay check is the only gate.
+- **Verdicts fail closed.** Only `behavior: "allow"` allows; anything else reaches Claude Code as `deny`.
 - **Permission outbound never throws.** `relayPermissionRequest` swallows bad params and relay outages — the local approval dialog must survive anything the mesh does.
 
 ### Prompt-injection threat model

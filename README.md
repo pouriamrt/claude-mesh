@@ -11,7 +11,7 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="claude-mesh-peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete (33 tasks, 203 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+> **Status:** software-complete (33 tasks, 211 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 >
 > Building on the `claude/channel` preview yourself? Our field notes for the Claude Code team are in [CHANNELS-FEEDBACK.md](./CHANNELS-FEEDBACK.md).
 >
@@ -352,7 +352,7 @@ Alternative path: Bob runs `mesh respond abcde allow` from his CLI; the relay sy
 
 ## Wire format
 
-One envelope for all kinds. Zod's `superRefine` enforces `permission_verdict` carries an `in_reply_to`.
+One envelope for all kinds. Zod's `superRefine` enforces `permission_verdict` carries an `in_reply_to`, and the relay only stores a verdict that answers a live `permission_request` routed to its sender (or to `@team`), addressed back to the requester with the same `request_id`.
 
 ```mermaid
 classDiagram
@@ -433,7 +433,7 @@ Sanity-check:
 
 ```bash
 pnpm -r exec vitest run
-# Tests  203 passed (203)
+# Tests  211 passed (211)
 ```
 
 ### 2. Configure via `.env`
