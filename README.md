@@ -31,7 +31,7 @@ A typical received message looks like this inside Claude's context:
 
 ```xml
 <channel source="claude-mesh-peers" from="alice" msg_id="msg_01KPGTX0RZRDB4SX1P5RNWZFV6"
-         sent_at="2026-04-18T17:53:04.695Z">
+         kind="chat">
 heads up, I just pushed the hotfix to main
 </channel>
 ```
@@ -184,7 +184,7 @@ mesh send <other-handle> "hello from me"
 `delivered_at` non-null = the recipient's `claude-mesh-peers` MCP is connected to the relay. The recipient's Claude Code receives it mid-conversation as:
 
 ```xml
-<channel source="claude-mesh-peers" from="<you>" msg_id="msg_..." sent_at="...">hello from me</channel>
+<channel source="claude-mesh-peers" from="<you>" msg_id="msg_..." kind="chat">hello from me</channel>
 ```
 
 ### 6. Day-to-day operations
@@ -384,7 +384,7 @@ classDiagram
 
 The peer-agent serializes inbound envelopes into MCP notifications:
 
-- `chat` → `notifications/claude/channel`
+- `chat` / `presence_update` → `notifications/claude/channel` (every event carries a server-set `kind` attribute)
 - `permission_request` → `notifications/claude/channel` with `kind="permission_request"` (Claude Code only *sends* `.../permission_request`; dropped when the approver has permission relay off)
 - `permission_verdict` → `notifications/claude/channel/permission`
 
@@ -620,7 +620,7 @@ Claude: "Told alice. She's online with summary: 'reviewing PR 412'."
 If alice's Claude then replies:
 
 ```
-<channel source="claude-mesh-peers" from="alice" msg_id="msg_01HR...">thanks, ack</channel>
+<channel source="claude-mesh-peers" from="alice" msg_id="msg_01HR..." kind="chat">thanks, ack</channel>
 ```
 
 …which arrives mid-turn in your context, and Claude can react to it or show it to you.

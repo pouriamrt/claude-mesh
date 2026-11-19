@@ -26,6 +26,12 @@ describe('createMcpServer', () => {
     expect(instructions).not.toContain('source="peers"')
   })
 
+  it('instructions name the server-set kind attribute for chats and presence updates', () => {
+    const { instructions } = createMcpServer({ permissionRelay: false })
+    expect(instructions).toContain('kind="chat"')
+    expect(instructions).toContain('kind="presence_update"')
+  })
+
   it('instructions tell Claude how peer permission requests arrive and that only its user decides', () => {
     const { instructions } = createMcpServer({ permissionRelay: true })
     expect(instructions).toContain('kind="permission_request"')

@@ -35,13 +35,22 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
       meta: {
         from: e.from,
         msg_id: e.id,
-        ...(e.kind === 'permission_request' ? { kind: e.kind } : {}),
+        kind: e.kind,
         ...(e.in_reply_to ? { in_reply_to: e.in_reply_to } : {}),
         ...(e.thread_root ? { thread_root: e.thread_root } : {}),
-        ...withoutReserved(safeMeta)
+        ...(e.kind === 'permission_request'
+          ? onlyKeys(safeMeta, PERMISSION_REQUEST_META_KEYS)
+          : withoutReserved(safeMeta))
       }
     }
   }
+}
+
+// A permission request is shown to the approver as-is, so it gets no free-form sender attributes.
+const PERMISSION_REQUEST_META_KEYS = ['request_id', 'tool_name', 'input_preview', 'expires_at'] as const
+
+function onlyKeys(meta: Record<string, string>, keys: readonly string[]): Record<string, string> {
+  return Object.fromEntries(keys.filter(k => Object.hasOwn(meta, k)).map(k => [k, meta[k]!]))
 }
 
 // Attributes set from the authenticated envelope, plus `source` (Claude Code sets
