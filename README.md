@@ -90,7 +90,8 @@ docker run --rm -it -v mesh-data:/data \
 docker run --rm -v mesh-data:/data alpine cat /data/admin.token
 docker run --rm -v mesh-data:/data alpine cat /data/<admin-handle>.paircode
 
-# Start the long-running server
+# Start the long-running server. -p 8443:8443 listens on every interface;
+# for tailnet-only access use -p <tailscale-ip>:8443:8443 (see the Tailscale recipe)
 docker run -d --name mesh-relay --restart unless-stopped \
   -p 8443:8443 -v mesh-data:/data \
   ghcr.io/pouriamrt/claude-mesh/relay:latest
@@ -228,14 +229,24 @@ Published automatically from every `v*.*.*` git tag — see [`.github/workflows/
 
 ## Cross-laptop setup (Tailscale recipe)
 
-The relay binds `127.0.0.1` by default. To include a teammate on another laptop **without exposing the relay to the public internet**, use Tailscale:
+Tailscale puts every laptop on a private WireGuard network (a tailnet), so teammates reach the relay without it touching the public internet. Bearer tokens travel inside WireGuard, encrypted between the two nodes, so this path needs no TLS setup.
 
-1. **Both laptops install Tailscale** and sign in. You can [Share a single node](https://tailscale.com/kb/1084/sharing/) from your admin console if your teammate shouldn't join your full tailnet — they create their own free account, you share *only* the relay machine with them, and they see it as a node in their tailnet.
-2. **Host laptop**: edit `.env`, set `HOST=0.0.0.0`, restart the relay. Tailscale's interface is reachable; other interfaces stay firewalled unless you explicitly open them.
-3. **Teammate's laptop**: clone, install, build, set `.env` to `MESH_RELAY=http://<your-tailscale-ip>:8443`, redeem a pair code you generated with `mesh admin add-user`.
-4. **Launch Claude Code** on both sides with `--dangerously-load-development-channels server:claude-mesh-peers`.
+1. **Everyone installs Tailscale** and signs in. A teammate doesn't have to join your tailnet: [share just the relay machine](https://tailscale.com/kb/1084/sharing/) and they see only that one node from their own free account.
+2. **Expose the relay to the tailnet.** Pick one:
 
-Bearer tokens travel inside WireGuard, so they're encrypted end-to-end between the two tailnet nodes — no TLS termination needed for this path. If the teammate's laptop is lost or compromised, run `mesh admin disable-user --handle <theirs>` on your host to revoke instantly. For public-internet exposure you'll want a TLS-terminating reverse proxy (Caddy, Traefik, nginx) in front of the relay — the `docker/` directory has a starting-point Compose file with Caddy.
+   | Option | On the relay host | Teammates set |
+   |---|---|---|
+   | **A. Bind to the Tailscale IP** (simplest) | `.env`: `HOST=<output of tailscale ip -4>`, then restart the relay. Docker: `-p <tailscale-ip>:8443:8443` instead of `-p 8443:8443`. | `MESH_RELAY=http://<tailscale-ip>:8443`, or `http://<machine-name>:8443` with MagicDNS |
+   | **B. `tailscale serve`** (HTTPS, relay stays on loopback) | Keep `HOST=127.0.0.1` (Docker: `-p 127.0.0.1:8443:8443`), then run `tailscale serve --bg 8443`. | `MESH_RELAY=https://<machine-name>.<tailnet>.ts.net` |
+
+   - **Don't use `HOST=0.0.0.0` or a bare `-p 8443:8443` here.** Both put the relay on every interface (LAN, café Wi-Fi, public IP) unless a firewall happens to block it. `.env.example` sets `HOST=127.0.0.1`, but with `HOST` unset the relay falls back to `0.0.0.0`.
+   - **Option A:** Tailscale has to be connected before the relay starts. Otherwise the bind fails with `EADDRNOTAVAIL` (Docker: `cannot assign requested address`), so start or restart the relay after `tailscale up`. A device keeps the same Tailscale IP across reboots.
+   - **Option B:** needs MagicDNS and HTTPS certificates turned on for the tailnet; the CLI links to the admin page the first time. `tailscale serve status` shows the mapping and `tailscale serve reset` removes it. We haven't soak-tested the SSE stream through `serve`. If inbound messages stall, switch to option A.
+3. **Lock it down (optional).** A [Tailscale access-control rule](https://tailscale.com/kb/1018/acls) can limit the relay's port (8443 for A, 443 for B) to your teammates instead of every device on the tailnet.
+4. **Teammate's laptop:** clone, install, build, and put the `MESH_RELAY` from step 2 in `.env`. Check the path with `curl <MESH_RELAY>/health`, which should print `{"ok":true}`. Then redeem a pair code you generated with `mesh admin add-user`.
+5. **Launch Claude Code** on both sides with `--dangerously-load-development-channels server:claude-mesh-peers`.
+
+If a teammate's laptop is lost or compromised, run `mesh admin disable-user --handle <theirs>` on your host to revoke it at once. Don't use `tailscale funnel`: it publishes the relay to the whole internet with bearer auth as the only gate. For deliberate public exposure, put a TLS-terminating reverse proxy (Caddy, Traefik, nginx) in front of the relay. The `docker/` directory has a starting-point Compose file with Caddy.
 
 ## Table of contents
 
