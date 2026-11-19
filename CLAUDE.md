@@ -18,19 +18,16 @@ The repo is a **pnpm 10 workspace**. Node 22 or 24 (25 lacks prebuilt `better-sq
 pnpm install                                   # install all workspace deps
 pnpm -r build                                  # build every package
 pnpm -r typecheck                              # tsc --noEmit across the workspace
-pnpm -r exec vitest run                        # full suite (~193 tests; e2e L3 scenarios skip without CLAUDE_DRIVER)
+pnpm -r exec vitest run                        # full suite (~198 tests)
 pnpm -r test:ci                                # vitest run + coverage thresholds
 
 # Scope to one package:
 pnpm -F @claude-mesh/relay exec vitest run
 pnpm -F @claude-mesh/shared exec vitest run channel          # single test file
 pnpm -F @claude-mesh/shared exec vitest run -t "round-trip"  # single test name
-
-# L3 end-to-end against a real claude binary:
-CLAUDE_DRIVER=cli pnpm -F @claude-mesh/e2e exec vitest run
 ```
 
-Coverage thresholds (enforced in each package's `vitest.config.ts`): 95% lines on `shared`, 85% on `relay`; `peer-agent` gates are lower (CLI entry points + SSE client excluded — exercised by the L3 harness instead).
+Coverage thresholds (enforced in each package's `vitest.config.ts`): 95% lines on `shared`, 85% on `relay`; `peer-agent` gates are lower (CLI entry points + SSE client excluded — exercised only in live interactive sessions; see gotcha 5).
 
 ## Architecture (big picture)
 
@@ -40,12 +37,12 @@ Claude Code ──stdio──▶ peer-agent (MCP channel server) ──HTTPS/SSE
 
 1. **`@claude-mesh/shared`** — zod envelope schema (the wire format), `<channel>` serializer, monotonic ULID helpers, constants. Pure types/validators, no IO.
 2. **`@claude-mesh/relay`** — Hono + better-sqlite3 + SSE. Routes: `POST /v1/messages` (Idempotency-Key), `GET /v1/stream?since=<ulid>`, `POST /v1/presence`, `GET /v1/peers`, `POST /v1/auth/pair`, `POST /v1/permission/respond`, `/v1/admin/*`. In-memory fanout registry; SQLite for durable buffering.
-3. **`@claude-mesh/peer-agent`** — stdio MCP server declaring `experimental['claude/channel']` (+ `claude/channel/permission` when enabled). Inbound: SSE → `InboundDispatcher` → `notifications/claude/channel*`. Outbound: MCP tools `send_to_peer`, `list_peers`, `set_summary`, `respond_to_permission`, plus the `notifications/claude/channel/permission_request` client-notification handler (`permission-outbound.ts`) that fans approval requests out per `approval_routing`. Also home of the `mesh` CLI (`pair`, `send`, `respond`, `admin ...`).
-4. **`@claude-mesh/e2e`** — L3 harness: in-memory relay + paired humans; scenario tests gated behind `CLAUDE_DRIVER`.
+3. **`@claude-mesh/peer-agent`** — stdio MCP server declaring `experimental['claude/channel']` (+ `claude/channel/permission` when enabled). Inbound: SSE → `InboundDispatcher` → `notifications/claude/channel` (chats and peer permission requests, the latter tagged `kind="permission_request"`) or `notifications/claude/channel/permission` (verdicts). Outbound: MCP tools `send_to_peer`, `list_peers`, `set_summary`, `respond_to_permission`, plus the `notifications/claude/channel/permission_request` client-notification handler (`permission-outbound.ts`) that fans approval requests out per `approval_routing`. Also home of the `mesh` CLI (`pair`, `send`, `respond`, `admin ...`).
+4. **`@claude-mesh/e2e`** — in-memory relay + paired humans; relay-level scenario tests only (no real Claude, see gotcha 5).
 
 ### Key invariants to preserve
 
-- **`from` is server-populated from the token** on every message. Peer-agents cannot set it. Primary anti-impersonation defense.
+- **`from` is server-populated from the token** on every message. Peer-agents cannot set it, and the `<channel>` serializer strips reserved sender meta keys (`from`, `msg_id`, `in_reply_to`, `thread_root`, `source`, `kind`, `requester`) so meta can never shadow it. Primary anti-impersonation defense.
 - **ULIDs are monotonic** (`shared/src/ulid.ts` uses `monotonicFactory()`). The SSE resume cursor is `WHERE id > ?` and relies on strict ordering within a millisecond.
 - **`<channel>` body escaping** (`shared/src/channel.ts`) prevents forged sibling tags; a 500-run property test asserts escaped bodies never contain `</channel>`.
 - **Envelope is *the* wire format.** One `EnvelopeSchema`, four kinds (`chat`, `presence_update`, `permission_request`, `permission_verdict`). `permission_verdict` requires `in_reply_to` (enforced via `superRefine`).
@@ -72,6 +69,8 @@ Every change is a TDD cycle: **failing test → RED → implement → GREEN → 
 2. **TS 5.7+ needs `allowImportingTsExtensions` + `rewriteRelativeImportExtensions`** for the `import './foo.ts'` convention (set in `tsconfig.base.json`).
 3. **MCP SDK ≥1.29 is typed against `zod/v4`.** Extending SDK schemas (e.g. `NotificationSchema.extend`) requires `import { z } from 'zod/v4'` — the v3 root export fails typecheck with a missing `_zod` property.
 4. **Channel notifications are silently dropped** unless Claude Code launches with `--dangerously-load-development-channels server:claude-mesh-peers`. The only trace is a "Channel notifications skipped" line in `~/.claude/debug/*.txt`.
+5. **The dev-channels flag is ignored under `-p` and the Agent SDK** — the channel never registers (no gate line in the debug log at all), so channel delivery cannot be tested headlessly. The old `CLAUDE_DRIVER` scenarios were deleted for this; verify live in an interactive session.
+6. **`notifications/claude/channel/permission_request` is client→server only.** Claude Code registers inbound handlers for just `notifications/claude/channel` and `.../permission`, and renders `source="<server name>"` itself. Anything the approver must see goes out as a plain channel event; never emit a `source` meta key.
 
 ## What *not* to do
 

@@ -51,12 +51,9 @@ jobs:
       || contains(github.event.pull_request.labels.*.name, 'e2e')
     needs: test
     runs-on: ubuntu-latest
-    # L3 driver scenarios spawn a real `claude` binary, which needs Claude Code
-    # installed AND credentials. Set either secret to enable them; with neither,
-    # canDrive() is false and those scenarios skip instead of failing the run.
-    env:
-      CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    # Relay-level scenarios only. No real `claude` here: Claude Code ignores
+    # --dangerously-load-development-channels under -p / the Agent SDK, so a
+    # headless session can never register the channel.
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -64,9 +61,4 @@ jobs:
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
       - run: pnpm -F @claude-mesh/shared build && pnpm -F @claude-mesh/relay build && pnpm -F @claude-mesh/peer-agent build
-      - name: Install Claude Code
-        if: env.CLAUDE_CODE_OAUTH_TOKEN != '' || env.ANTHROPIC_API_KEY != ''
-        run: npm i -g @anthropic-ai/claude-code
       - run: pnpm -F @claude-mesh/e2e test:ci
-        env:
-          CLAUDE_DRIVER: ${{ (env.CLAUDE_CODE_OAUTH_TOKEN != '' || env.ANTHROPIC_API_KEY != '') && 'cli' || '' }}

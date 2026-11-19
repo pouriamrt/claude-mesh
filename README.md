@@ -433,8 +433,7 @@ Sanity-check:
 
 ```bash
 pnpm -r exec vitest run
-# Tests  193 passed (195)
-#        2 skipped   ← L3 scenarios gated behind CLAUDE_DRIVER
+# Tests  198 passed (198)
 ```
 
 ### 2. Configure via `.env`
@@ -706,9 +705,6 @@ pnpm -r exec vitest run
 # Scope to one package:
 pnpm -F @claude-mesh/relay exec vitest run
 pnpm -F @claude-mesh/shared exec vitest run -t "round-trip"
-
-# L3 end-to-end (requires `claude` CLI or CLAUDE_DRIVER=agent-sdk):
-CLAUDE_DRIVER=cli pnpm -F @claude-mesh/e2e exec vitest run
 ```
 
 ### Adding a new envelope `kind`
@@ -752,11 +748,11 @@ Full threat model, reporting process, and known limitations: [SECURITY.md](./SEC
 
 Honest state of the repo as of the last commit:
 
-- **Inbound flow verified live, outbound unit-tested only.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — is verified end-to-end (Windows 11, Claude Code v2.1.80+, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch). The outbound flows (Claude replying via `send_to_peer`, Claude originating a `permission_request` via the `notifications/claude/channel/permission_request` handler in `permission-outbound.ts`) are fully wired and unit-tested but have not been smoke-tested across two real Claude sessions; the L3 scenario tests (`dm.test.ts`, `broadcast.test.ts`) remain gated behind `CLAUDE_DRIVER=cli` and skip by default.
-- **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. The L3 scenario tests are the early-warning system.
+- **Inbound flow verified live, outbound unit-tested only.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — was verified end-to-end on Claude Code v2.1.80 (Windows 11, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch); the wire contract was re-checked statically against v2.1.328. The outbound flows (Claude replying via `send_to_peer`, Claude originating a `permission_request` via the `notifications/claude/channel/permission_request` handler in `permission-outbound.ts`) and the approver-side `kind="permission_request"` channel event are unit-tested but have not been smoke-tested across two real Claude sessions.
+- **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. There is no automated live test: Claude Code ignores the development-channels flag under `-p` and the Agent SDK, so a headless session never registers the channel. Re-check the [channels reference](https://code.claude.com/docs/en/channels-reference) and run a live interactive session after Claude Code upgrades.
 - **Single-region only.** No multi-region HA, no replication.
 - **Admin token is a single-secret failure mode.** Rotate; consider mTLS for admin calls in a future revision.
-- **Peer-agent coverage thresholds are pragmatic, not aspirational.** `shared` hits 100% across the board and `relay` sits comfortably above its gates; `peer-agent` business-logic files (`gate`, `mcp-server`, `instructions`, `reply-limiter`, `approval-routing`, `permission`, `inbound`) are 88-100%, but `tools.ts` / `roots.ts` / `config.ts` validation branches are under-tested and the CLI entry points (`cli/admin.ts`, `cli/pair.ts`, `cli/respond.ts`, `cli/send.ts`) plus the SSE client (`stream.ts`) are excluded from coverage — they're exercised by the L3 harness (`packages/e2e`, gated behind `CLAUDE_DRIVER=cli`). Raising the `peer-agent` thresholds back to 85/80 is a tracked follow-up.
+- **Peer-agent coverage thresholds are pragmatic, not aspirational.** `shared` hits 100% across the board and `relay` sits comfortably above its gates; `peer-agent` business-logic files (`gate`, `mcp-server`, `instructions`, `reply-limiter`, `approval-routing`, `permission`, `inbound`) are 88-100%, but `tools.ts` / `roots.ts` / `config.ts` validation branches are under-tested and the CLI entry points (`cli/admin.ts`, `cli/pair.ts`, `cli/respond.ts`, `cli/send.ts`) plus the SSE client (`stream.ts`) are excluded from coverage — they're exercised only in live interactive sessions. Raising the `peer-agent` thresholds back to 85/80 is a tracked follow-up.
 
 ## License
 

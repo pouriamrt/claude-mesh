@@ -9,8 +9,8 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: [
         'src/**/*.test.ts',
-        // Entry points and CLI glue — covered by the L3 integration tests
-        // in packages/e2e (gated behind CLAUDE_DRIVER=cli). Unit-testing
+        // Entry points and CLI glue — exercised only in live interactive
+        // sessions (Claude Code won't register channels headlessly). Unit-testing
         // them here would just mock filesystem/stdin/fetch, which isn't
         // a useful signal.
         'src/index.ts',
