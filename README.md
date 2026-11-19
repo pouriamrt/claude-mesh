@@ -11,7 +11,7 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="claude-mesh-peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete (33 tasks, 213 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+> **Status:** software-complete (33 tasks, 213 tests passing). **DMs and the full permission round trip verified live against Claude Code v2.1.328** (`--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 >
 > Building on the `claude/channel` preview yourself? Our field notes for the Claude Code team are in [CHANNELS-FEEDBACK.md](./CHANNELS-FEEDBACK.md).
 >
@@ -761,7 +761,12 @@ Full threat model, reporting process, and known limitations: [SECURITY.md](./SEC
 
 Honest state of the repo as of the last commit:
 
-- **Inbound flow verified live, outbound unit-tested only.** Inbound `<channel>` tag delivery — peer CLI → relay → SSE → peer-agent → Claude Code context — was verified end-to-end on Claude Code v2.1.80 (Windows 11, requires `--dangerously-load-development-channels server:claude-mesh-peers` on launch); the wire contract was re-checked statically against v2.1.328. The outbound flows (Claude replying via `send_to_peer`, Claude originating a `permission_request` via the `notifications/claude/channel/permission_request` handler in `permission-outbound.ts`) and the approver-side `kind="permission_request"` channel event are unit-tested but have not been smoke-tested across two real Claude sessions.
+- **Verified live on Claude Code v2.1.328 (2026-11-19), one machine.** Two interactive sessions on Windows 11, each launched with `--dangerously-load-development-channels server:claude-mesh-peers`, against a local relay:
+  - A chat woke the idle recipient. It saw `source="claude-mesh-peers" from=… msg_id=… kind="chat"` (a forged `meta.from` was stripped) and answered with `send_to_peer`.
+  - A Bash permission prompt on one side reached the other as a `kind="permission_request"` event. The approver's Claude asked its own user instead of deciding, and the user's approval resolved the requester's dialog.
+  - The relay rejected a self-approval and a verdict with the wrong `request_id`.
+
+  Not yet covered live: two separate machines, the Docker relay image, and `ask_team` / `ask_thread_participants` routing (the run used `ask_specific_peer`).
 - **Research-preview dependency.** `claude/channel` is research-preview; wire format may change across Claude Code releases. There is no automated live test: Claude Code ignores the development-channels flag under `-p` and the Agent SDK, so a headless session never registers the channel. Re-check the [channels reference](https://code.claude.com/docs/en/channels-reference) and run a live interactive session after Claude Code upgrades.
 - **Single-region only.** No multi-region HA, no replication.
 - **Admin token is a single-secret failure mode.** Rotate; consider mTLS for admin calls in a future revision.

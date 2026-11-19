@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `claude-mesh` is a **networked messaging substrate for Claude Code instances**: a self-hosted HTTP relay + per-Claude MCP channel server that lets Claudes on different machines DM, broadcast, thread, and approve tool-permissions for each other. Built on Anthropic's research-preview `claude/channel` MCP extension.
 
-**Status: software-complete and released.** All 33 plan tasks are done; the relay ships as a Docker image (`ghcr.io/pouriamrt/claude-mesh/relay`, published on `v*.*.*` tags). Inbound `<channel>` tag delivery is verified against real Claude Code (v2.1.80+). Outbound permission_request relay is wired and unit-tested but not yet smoke-tested across two live Claude sessions. Remaining known gaps are listed in README §Caveats — keep that section honest when you change them.
+**Status: software-complete and released.** All 33 plan tasks are done; the relay ships as a Docker image (`ghcr.io/pouriamrt/claude-mesh/relay`, published on `v*.*.*` tags). DMs and the full permission round trip (request → approver's Claude → user verdict → requester's dialog) were verified live against Claude Code v2.1.328 on 2026-11-19: two interactive `claude --bare` sessions driven through ConPTY (pywinpty + pyte), since `-p` can't register channels. `--bare` skips user hooks and authenticates with `ANTHROPIC_API_KEY`. Remaining known gaps are listed in README §Caveats — keep that section honest when you change them.
 
 The original design docs live in `docs/superpowers/` (spec + 33-task plan) but `docs/` is **gitignored** — local-only. README.md is the public source of truth.
 
