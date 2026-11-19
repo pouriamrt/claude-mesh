@@ -9,7 +9,7 @@
 
 **Networked Claude-to-Claude messaging over HTTP + MCP channels.**
 
-`claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="peers" ...>` tags; outbound goes through MCP tools.
+`claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="claude-mesh-peers" ...>` tags; outbound goes through MCP tools.
 
 > **Status:** software-complete (33 tasks, 193 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 >
@@ -21,7 +21,7 @@
 
 ## What you can do with it
 
-- **DM another Claude** — "Ask alice if the deploy went through" → your Claude calls `send_to_peer`, alice's Claude receives a `<channel source="peers" from="you" ...>` tag mid-conversation and can answer or take action.
+- **DM another Claude** — "Ask alice if the deploy went through" → your Claude calls `send_to_peer`, alice's Claude receives a `<channel source="claude-mesh-peers" from="you" ...>` tag mid-conversation and can answer or take action.
 - **Broadcast to the whole team** — `send_to_peer(to="@team", ...)` fans out to everyone online, no spam to offline peers.
 - **Thread replies** — `in_reply_to` + `thread_root` keep multi-turn conversations stitched together across machines.
 - **Relay permissions between Claudes** — when Claude wants to run a risky command it can route the approval dialog to a teammate's Claude (default-off, opt-in per peer-agent).
@@ -30,7 +30,7 @@
 A typical received message looks like this inside Claude's context:
 
 ```xml
-<channel source="peers" from="alice" msg_id="msg_01KPGTX0RZRDB4SX1P5RNWZFV6"
+<channel source="claude-mesh-peers" from="alice" msg_id="msg_01KPGTX0RZRDB4SX1P5RNWZFV6"
          sent_at="2026-04-18T17:53:04.695Z">
 heads up, I just pushed the hotfix to main
 </channel>
@@ -184,7 +184,7 @@ mesh send <other-handle> "hello from me"
 `delivered_at` non-null = the recipient's `claude-mesh-peers` MCP is connected to the relay. The recipient's Claude Code receives it mid-conversation as:
 
 ```xml
-<channel source="peers" from="<you>" msg_id="msg_..." sent_at="...">hello from me</channel>
+<channel source="claude-mesh-peers" from="<you>" msg_id="msg_..." sent_at="...">hello from me</channel>
 ```
 
 ### 6. Day-to-day operations
@@ -607,7 +607,7 @@ The `mesh pair` step in §5 already wrote an entry into `~/.claude.json`:
 }
 ```
 
-Restart Claude Code. In the new session, run `/mcp` or check the tool list. You should see three new tools: `send_to_peer`, `list_peers`, `set_summary`. Inbound peer messages arrive in context as `<channel source="peers" ...>` tags.
+Restart Claude Code. In the new session, run `/mcp` or check the tool list. You should see three new tools: `send_to_peer`, `list_peers`, `set_summary`. Inbound peer messages arrive in context as `<channel source="claude-mesh-peers" ...>` tags.
 
 Example interaction (what you type → what Claude does):
 
@@ -621,7 +621,7 @@ Claude: "Told alice. She's online with summary: 'reviewing PR 412'."
 If alice's Claude then replies:
 
 ```
-<channel source="peers" from="alice" msg_id="msg_01HR...">thanks, ack</channel>
+<channel source="claude-mesh-peers" from="alice" msg_id="msg_01HR...">thanks, ack</channel>
 ```
 
 …which arrives mid-turn in your context, and Claude can react to it or show it to you.

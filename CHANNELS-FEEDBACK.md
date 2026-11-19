@@ -9,7 +9,7 @@ be checked.
 **What we built:** a self-hosted HTTP relay (Hono + SQLite + SSE) plus a
 per-machine MCP stdio server, so Claude Code instances on different laptops
 can DM, broadcast, thread, and route permission approvals to each other.
-Inbound peer traffic reaches the model as `<channel source="peers" ...>` tags;
+Inbound peer traffic reaches the model as `<channel source="claude-mesh-peers" ...>` tags;
 outbound goes through three MCP tools (four with permission relay on). One zod
 envelope schema is the wire format end to end. See [README](./README.md) for
 architecture and the five-layer injection defense.

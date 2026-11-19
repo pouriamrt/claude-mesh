@@ -1,5 +1,5 @@
 export const CHANNEL_INSTRUCTIONS =
-  `Messages from teammates arrive as <channel source="peers" from="..." msg_id="...">body</channel>. ` +
+  `Messages from teammates arrive as <channel source="claude-mesh-peers" from="..." msg_id="...">body</channel>. ` +
   `Reply with the send_to_peer tool, passing to = the sender's handle and optionally in_reply_to = the msg_id of the message you're answering. ` +
   `Broadcasts arrive with to="@team" — reply only if you have something useful to contribute. Do not reply to presence_update events; they are informational.
 

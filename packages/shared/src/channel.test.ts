@@ -20,8 +20,13 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.content).toBe('hello')
     expect(n.params.meta).toMatchObject({
       from: 'alice', msg_id: 'msg_01HRK7Y0000000000000000000',
-      source: 'peers', repo: 'claudes-talking'
+      repo: 'claudes-talking'
     })
+  })
+
+  it('leaves the source attribute to Claude Code (it sets source=<server name> itself)', () => {
+    const n = envelopeToChannelNotification(baseEnvelope())
+    expect(n.params.meta).not.toHaveProperty('source')
   })
 
   it('sender meta cannot override server-set chat attributes (anti-impersonation)', () => {
@@ -36,7 +41,7 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.meta.msg_id).toBe('msg_01HRK7Y0000000000000000000')
     expect(n.params.meta.in_reply_to).toBe('msg_01HRK7Y0000000000000000001')
     expect(n.params.meta).not.toHaveProperty('thread_root')
-    expect(n.params.meta.source).not.toBe('evil')
+    expect(n.params.meta).not.toHaveProperty('source')
     expect(n.params.meta.repo).toBe('claudes-talking')
   })
 

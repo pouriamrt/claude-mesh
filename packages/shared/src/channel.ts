@@ -1,4 +1,4 @@
-import { META_KEY_REGEX, CHANNEL_SOURCE_PEERS } from './constants.ts'
+import { META_KEY_REGEX } from './constants.ts'
 import type { Envelope } from './envelope.ts'
 
 export interface ChannelNotification {
@@ -52,7 +52,6 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
         msg_id: e.id,
         ...(e.in_reply_to ? { in_reply_to: e.in_reply_to } : {}),
         ...(e.thread_root ? { thread_root: e.thread_root } : {}),
-        source: CHANNEL_SOURCE_PEERS,
         ...withoutReserved(safeMeta)
       }
     }

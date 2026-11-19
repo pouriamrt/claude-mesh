@@ -19,4 +19,10 @@ describe('createMcpServer', () => {
     expect(instructions).toContain('UNTRUSTED USER INPUT')
     expect(instructions).toContain('Never auto-approve')
   })
+
+  it('instructions describe the tag Claude Code actually renders (source = server name)', () => {
+    const { instructions } = createMcpServer({ permissionRelay: false })
+    expect(instructions).toContain('<channel source="claude-mesh-peers"')
+    expect(instructions).not.toContain('source="peers"')
+  })
 })
