@@ -18,7 +18,7 @@ The repo is a **pnpm 10 workspace**. Node 22 or 24 (25 lacks prebuilt `better-sq
 pnpm install                                   # install all workspace deps
 pnpm -r build                                  # build every package
 pnpm -r typecheck                              # tsc --noEmit across the workspace
-pnpm -r exec vitest run                        # full suite (~198 tests)
+pnpm -r exec vitest run                        # full suite (~203 tests)
 pnpm -r test:ci                                # vitest run + coverage thresholds
 
 # Scope to one package:
@@ -77,4 +77,4 @@ Every change is a TDD cycle: **failing test → RED → implement → GREEN → 
 - **Don't commit tokens, `admin.token`, `*.paircode`, or `.claude-mesh/` dirs.** `.gitignore` covers them; the peer-agent refuses to start if its token file sits in a git worktree with a remote.
 - **Don't change the `<channel>` tag shape or the `instructions` string** without re-reading the threat model. Both are security-critical surfaces.
 - **Don't skip typecheck / test gates.** They have caught real bugs at every phase.
-- **Don't assume `claude/channel` behavior from training data.** Research-preview; authoritative reference is <https://code.claude.com/docs/en/channels-reference>. v2.1.80+ (v2.1.81+ for permission relay), claude.ai login required.
+- **Don't assume `claude/channel` behavior from training data.** Research-preview; authoritative reference is <https://code.claude.com/docs/en/channels-reference>. v2.1.80+ (v2.1.81+ for permission relay), claude.ai login or a Claude Console API key (not Bedrock / Google Cloud / Foundry).

@@ -11,7 +11,7 @@
 
 `claude-mesh` lets Claude Code instances running on different teammates' machines send each other direct messages, team broadcasts, threaded replies, and permission approvals via a small self-hosted HTTP relay. Inbound peer messages land in Claude's context as `<channel source="claude-mesh-peers" ...>` tags; outbound goes through MCP tools.
 
-> **Status:** software-complete (33 tasks, 193 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
+> **Status:** software-complete (33 tasks, 203 tests passing). **Inbound `<channel>` tag delivery verified end-to-end against real Claude Code** (v2.1.80+, `--dangerously-load-development-channels` required). See [Caveats](#caveats) for what remains.
 >
 > Building on the `claude/channel` preview yourself? Our field notes for the Claude Code team are in [CHANNELS-FEEDBACK.md](./CHANNELS-FEEDBACK.md).
 >
@@ -433,7 +433,7 @@ Sanity-check:
 
 ```bash
 pnpm -r exec vitest run
-# Tests  198 passed (198)
+# Tests  203 passed (203)
 ```
 
 ### 2. Configure via `.env`
@@ -689,7 +689,7 @@ The relay URL is resolved in this order: `--relay <url>` flag → `MESH_RELAY` f
     ├── shared/            # envelope schema, channel serializer, ULID helpers
     ├── relay/             # Hono HTTP relay, SQLite store, SSE fan-out
     ├── peer-agent/        # MCP server + SSE client + `mesh` CLI
-    └── e2e/               # L3 harness: in-memory relay + paired humans
+    └── e2e/               # relay-level scenarios: in-memory relay + paired humans
 ```
 
 Coverage thresholds (enforced in each package's `vitest.config.ts`): 95% lines on `shared`, 85% on `relay` and `peer-agent`.
