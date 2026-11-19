@@ -25,6 +25,9 @@ function assertVerdictAnswers(parent: ParentRow | undefined, from_handle: string
   if (parent?.kind !== 'permission_request') {
     throw new Error('permission_verdict needs in_reply_to pointing at a permission_request')
   }
+  if (parent.from_handle === from_handle) {
+    throw new Error('permission_verdict sender cannot answer its own permission_request')
+  }
   if (parent.to_handle !== from_handle && parent.to_handle !== TEAM_BROADCAST_HANDLE) {
     throw new Error('permission_verdict sender was not routed this permission_request')
   }

@@ -80,6 +80,11 @@ describe('MessageStore', () => {
       expect(verdict('charlie', request('@team').id).kind).toBe('permission_verdict')
     })
 
+    it('rejects the requester answering its own @team request', () => {
+      const req = request('@team')
+      expect(() => verdict('alice', req.id)).toThrow(/own/)
+    })
+
     it('rejects a verdict from a member the request was not routed to', () => {
       const req = request('bob')
       expect(() => verdict('charlie', req.id)).toThrow(/not routed/)

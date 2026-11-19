@@ -33,9 +33,9 @@ export function permissionRoute(deps: Deps) {
     const rows = deps.db.prepare(`
       SELECT id, content, from_handle, meta_json
       FROM message
-      WHERE team_id=? AND kind='permission_request' AND to_handle IN (?, '@team')
+      WHERE team_id=? AND kind='permission_request' AND to_handle IN (?, '@team') AND from_handle != ?
       ORDER BY id DESC LIMIT 50
-    `).all(team, me) as RequestRow[]
+    `).all(team, me, me) as RequestRow[]
 
     const want = parsed.data.request_id.toLowerCase()
     const req = rows

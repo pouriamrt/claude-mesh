@@ -46,6 +46,15 @@ describe('POST /v1/permission/respond', () => {
     expect(res.status).toBe(404)
   })
 
+  it('404 when the requester tries to answer its own @team request', async () => {
+    await post('/v1/messages', t.a, {
+      to: '@team', kind: 'permission_request', content: 'rm -rf dist/',
+      meta: { request_id: 'abcde', expires_at: new Date(Date.now() + 60_000).toISOString() }
+    })
+    const res = await post('/v1/permission/respond', t.a, { request_id: 'abcde', verdict: 'allow' })
+    expect(res.status).toBe(404)
+  })
+
   it('synthesizes verdict envelope when matching request exists', async () => {
     await post('/v1/messages', t.a, {
       to: 'bob', kind: 'permission_request', content: 'delete build output',
