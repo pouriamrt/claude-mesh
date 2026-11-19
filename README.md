@@ -740,7 +740,7 @@ flowchart TB
   L1 -->|pass| L2[L2: from stamped<br/>server-side from token]
   L2 --> L3{L3: SenderGate<br/>checks roster}
   L3 -->|unknown| X2[silent drop + metric]
-  L3 -->|known| L4[L4: channel tag<br/>escapes body + attrs]
+  L3 -->|known| L4[L4: channel tag<br/>escapes body + attrs,<br/>strips reserved meta]
   L4 --> L5[L5: Claude reads with<br/>UNTRUSTED USER INPUT<br/>instructions]
   L5 --> OK[Claude decides<br/>what to do]
 ```
@@ -749,6 +749,8 @@ flowchart TB
 
 - `permission_relay.enabled = false` out of the box.
 - `approval_routing = never_relay` by default.
+- `from`, `msg_id` and `kind` on every `<channel>` tag come from the authenticated envelope; sender meta can't shadow them, and a chat can't carry permission-request attributes.
+- The relay accepts a permission verdict only from a teammate the request was routed to (never the requester), and anything but `allow` denies.
 - Token files are chmod 0600; the peer-agent refuses to start if the token lives in a git worktree with a remote (defense against accidental token leaks via `git push`).
 - Reply-storm limiter: `send_to_peer` capped at 2 replies per inbound peer message within 10 seconds.
 - Tokens are never logged, never passed as env vars to child processes, never exposed to the LLM.

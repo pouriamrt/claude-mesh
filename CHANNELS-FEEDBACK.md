@@ -74,9 +74,10 @@ or a bridged UI could tell the user exactly what flag is missing.
 
 The development-channels flag is ignored under `-p` and the Agent SDK, so no
 headless session can register a bare `.mcp.json` channel. Our end-to-end
-scenario tests drove a real `claude --print` binary and could never have
-passed; we deleted them. The part of the stack most exposed to wire-format
-drift is the part CI can't watch. Any headless-capable path (API-key opt-in, a test mode,
+scenario tests drove a real `claude --print` binary; on current Claude Code
+(2.1.328) the channel never registers there, so we deleted them. The part of
+the stack most exposed to wire-format drift is the part CI can't watch. Any
+headless-capable path (a `-p` opt-in for development channels, a test mode,
 or a published notification-schema fixture set) would close that hole.
 
 ### 4. Escaping and rendering guarantees are underspecified
