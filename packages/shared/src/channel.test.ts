@@ -24,6 +24,22 @@ describe('envelopeToChannelNotification', () => {
     })
   })
 
+  it('sender meta cannot override server-set chat attributes (anti-impersonation)', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({
+      in_reply_to: 'msg_01HRK7Y0000000000000000001',
+      meta: {
+        from: 'boss', msg_id: 'msg_forged', in_reply_to: 'x', thread_root: 'y',
+        source: 'evil', repo: 'claudes-talking'
+      }
+    }))
+    expect(n.params.meta.from).toBe('alice')
+    expect(n.params.meta.msg_id).toBe('msg_01HRK7Y0000000000000000000')
+    expect(n.params.meta.in_reply_to).toBe('msg_01HRK7Y0000000000000000001')
+    expect(n.params.meta).not.toHaveProperty('thread_root')
+    expect(n.params.meta.source).not.toBe('evil')
+    expect(n.params.meta.repo).toBe('claudes-talking')
+  })
+
   it('emits permission_request method for kind=permission_request', () => {
     const e = baseEnvelope({
       kind: 'permission_request',

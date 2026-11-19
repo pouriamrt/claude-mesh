@@ -53,10 +53,20 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
         ...(e.in_reply_to ? { in_reply_to: e.in_reply_to } : {}),
         ...(e.thread_root ? { thread_root: e.thread_root } : {}),
         source: CHANNEL_SOURCE_PEERS,
-        ...safeMeta
+        ...withoutReserved(safeMeta)
       }
     }
   }
+}
+
+// Attributes the peer-agent sets from the authenticated envelope (and `source`,
+// which Claude Code sets itself); sender-supplied meta must never shadow them.
+const RESERVED_META_KEYS: ReadonlySet<string> = new Set([
+  'from', 'msg_id', 'in_reply_to', 'thread_root', 'source'
+])
+
+function withoutReserved(meta: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(Object.entries(meta).filter(([k]) => !RESERVED_META_KEYS.has(k)))
 }
 
 function sanitizeMeta(meta: Record<string, string>): Record<string, string> {
