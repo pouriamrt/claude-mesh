@@ -21,7 +21,7 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
         content: '',
         meta: safeMeta,
         request_id: safeMeta.request_id ?? '',
-        behavior: safeMeta.behavior === 'deny' ? 'deny' : 'allow'
+        behavior: safeMeta.behavior === 'allow' ? 'allow' : 'deny'
       }
     }
   }

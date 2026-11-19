@@ -94,13 +94,20 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.behavior).toBe('deny')
   })
 
-  it('defaults behavior to "allow" if meta.behavior is missing/unknown', () => {
-    const e = baseEnvelope({
-      kind: 'permission_verdict',
-      in_reply_to: 'msg_01HRK7Y0000000000000000001',
-      meta: { request_id: 'abcde' }
-    })
-    const n = envelopeToChannelNotification(e)
+  it('fails closed: a verdict whose behavior is missing or unknown denies', () => {
+    for (const meta of [{ request_id: 'abcde' }, { request_id: 'abcde', behavior: 'ALLOW' }, { request_id: 'abcde', behavior: 'yes' }]) {
+      const n = envelopeToChannelNotification(baseEnvelope({
+        kind: 'permission_verdict', in_reply_to: 'msg_01HRK7Y0000000000000000001', meta
+      }))
+      expect(n.params.behavior).toBe('deny')
+    }
+  })
+
+  it('only the literal behavior "allow" allows', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({
+      kind: 'permission_verdict', in_reply_to: 'msg_01HRK7Y0000000000000000001',
+      meta: { request_id: 'abcde', behavior: 'allow' }
+    }))
     expect(n.params.behavior).toBe('allow')
   })
 
@@ -137,7 +144,7 @@ describe('envelopeToChannelNotification', () => {
     })
     const n = envelopeToChannelNotification(e)
     expect(n.params.request_id).toBe('')
-    expect(n.params.behavior).toBe('allow')
+    expect(n.params.behavior).toBe('deny')
   })
 })
 
