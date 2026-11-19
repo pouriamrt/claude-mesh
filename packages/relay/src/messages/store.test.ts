@@ -60,6 +60,52 @@ describe('MessageStore', () => {
     } as OutboundMessage)).toThrow(/in_reply_to/)
   })
 
+  describe('permission_verdict must answer a live request routed to its sender', () => {
+    const request = (to: string, meta: Record<string, string> = {}) =>
+      store.insert('t1', 'alice', {
+        to, kind: 'permission_request', content: 'rm -rf dist/',
+        meta: { request_id: 'abcde', expires_at: new Date(Date.now() + 60_000).toISOString(), ...meta },
+      })
+    const verdict = (from: string, in_reply_to: string, meta: Record<string, string> = {}, to = 'alice') =>
+      store.insert('t1', from, {
+        to, kind: 'permission_verdict', content: '', in_reply_to: in_reply_to as OutboundMessage['in_reply_to'],
+        meta: { request_id: 'abcde', behavior: 'allow', ...meta },
+      })
+
+    it('accepts a verdict from the approver the request was routed to', () => {
+      expect(verdict('bob', request('bob').id).kind).toBe('permission_verdict')
+    })
+
+    it('accepts a verdict from any member when the request went to @team', () => {
+      expect(verdict('charlie', request('@team').id).kind).toBe('permission_verdict')
+    })
+
+    it('rejects a verdict from a member the request was not routed to', () => {
+      const req = request('bob')
+      expect(() => verdict('charlie', req.id)).toThrow(/not routed/)
+    })
+
+    it('rejects a verdict that replies to something other than a permission_request', () => {
+      const chat = store.insert('t1', 'alice', { to: 'bob', kind: 'chat', content: 'hi' })
+      expect(() => verdict('bob', chat.id)).toThrow(/permission_request/)
+    })
+
+    it('rejects a verdict whose request_id does not match the request', () => {
+      const req = request('bob')
+      expect(() => verdict('bob', req.id, { request_id: 'zzzzz' })).toThrow(/request_id/)
+    })
+
+    it('rejects a verdict addressed to anyone but the requester', () => {
+      const req = request('bob')
+      expect(() => verdict('bob', req.id, {}, 'charlie')).toThrow(/requester/)
+    })
+
+    it('rejects a verdict for an expired request', () => {
+      const req = request('bob', { expires_at: new Date(Date.now() - 1000).toISOString() })
+      expect(() => verdict('bob', req.id)).toThrow(/expired/)
+    })
+  })
+
   it('fetchSince returns messages after the given ULID ordered ascending', () => {
     const a = store.insert('t1', 'alice', { to: 'bob', kind: 'chat', content: '1' })
     const b = store.insert('t1', 'alice', { to: 'bob', kind: 'chat', content: '2' })

@@ -10,6 +10,35 @@ import {
 } from '@claude-mesh/shared'
 import type { Db } from '../db/db.ts'
 
+interface ParentRow {
+  id: string
+  thread_root: string | null
+  kind: string
+  from_handle: string
+  to_handle: string
+  meta_json: string
+}
+
+// The requester's peer-agent forwards any verdict it receives to Claude Code, so
+// the relay is the only place to check that the sender was actually asked.
+function assertVerdictAnswers(parent: ParentRow | undefined, from_handle: string, msg: OutboundMessage): void {
+  if (parent?.kind !== 'permission_request') {
+    throw new Error('permission_verdict needs in_reply_to pointing at a permission_request')
+  }
+  if (parent.to_handle !== from_handle && parent.to_handle !== TEAM_BROADCAST_HANDLE) {
+    throw new Error('permission_verdict sender was not routed this permission_request')
+  }
+  if (msg.to !== parent.from_handle) throw new Error('permission_verdict must go to the requester')
+  const req = JSON.parse(parent.meta_json) as Record<string, string>
+  const rid = (req.request_id ?? '').toLowerCase()
+  if (!rid || rid !== (msg.meta?.request_id ?? '').toLowerCase()) {
+    throw new Error('permission_verdict request_id does not match the permission_request')
+  }
+  if (req.expires_at && Date.parse(req.expires_at) < Date.now()) {
+    throw new Error('permission_request expired')
+  }
+}
+
 export class MessageStore {
   constructor(private readonly db: Db) {}
 
@@ -22,13 +51,15 @@ export class MessageStore {
     }
 
     let thread_root: string | null = null
+    let parent: ParentRow | undefined
     if (msg.in_reply_to) {
-      const parent = this.db.prepare(
-        "SELECT thread_root, id FROM message WHERE id=? AND team_id=?"
-      ).get(msg.in_reply_to, team_id) as { thread_root: string | null; id: string } | undefined
+      parent = this.db.prepare(
+        "SELECT id, thread_root, kind, from_handle, to_handle, meta_json FROM message WHERE id=? AND team_id=?"
+      ).get(msg.in_reply_to, team_id) as ParentRow | undefined
       if (!parent) throw new Error(`unknown in_reply_to: ${msg.in_reply_to}`)
       thread_root = parent.thread_root ?? parent.id
     }
+    if (msg.kind === 'permission_verdict') assertVerdictAnswers(parent, from_handle, msg)
 
     const envelope: Envelope = EnvelopeSchema.parse({
       id: newMessageId(),
