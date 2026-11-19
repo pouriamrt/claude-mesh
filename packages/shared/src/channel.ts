@@ -53,10 +53,12 @@ function onlyKeys(meta: Record<string, string>, keys: readonly string[]): Record
   return Object.fromEntries(keys.filter(k => Object.hasOwn(meta, k)).map(k => [k, meta[k]!]))
 }
 
-// Attributes set from the authenticated envelope, plus `source` (Claude Code sets
-// it) and `requester` (a sender-claimed copy of `from`): sender meta never shadows them.
+// Kept out of chat/presence meta: attributes set from the authenticated envelope,
+// `source` (Claude Code sets it), `requester` (a sender-claimed copy of `from`),
+// and the permission-prompt keys, so a chat can't imitate an approval request.
 const RESERVED_META_KEYS: ReadonlySet<string> = new Set([
-  'from', 'msg_id', 'in_reply_to', 'thread_root', 'source', 'kind', 'requester'
+  'from', 'msg_id', 'in_reply_to', 'thread_root', 'source', 'kind', 'requester',
+  ...PERMISSION_REQUEST_META_KEYS
 ])
 
 function withoutReserved(meta: Record<string, string>): Record<string, string> {

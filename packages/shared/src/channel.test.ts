@@ -87,6 +87,16 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.meta.kind).toBe('chat')
   })
 
+  it('a chat cannot carry permission-prompt attributes', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({
+      meta: { request_id: 'abcde', tool_name: 'Bash', input_preview: 'rm -rf /', expires_at: 'x', repo: 'r' }
+    }))
+    for (const k of ['request_id', 'tool_name', 'input_preview', 'expires_at']) {
+      expect(n.params.meta).not.toHaveProperty(k)
+    }
+    expect(n.params.meta.repo).toBe('r')
+  })
+
   it('permission_request carries only its allow-listed meta keys', () => {
     const n = envelopeToChannelNotification(baseEnvelope({
       kind: 'permission_request',
