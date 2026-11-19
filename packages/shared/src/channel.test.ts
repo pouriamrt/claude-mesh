@@ -45,16 +45,41 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.meta.repo).toBe('claudes-talking')
   })
 
-  it('emits permission_request method for kind=permission_request', () => {
+  // Claude Code only *sends* notifications/claude/channel/permission_request;
+  // it has no inbound handler for it, so the approver must see a channel event.
+  it('delivers kind=permission_request to the approver as a channel event', () => {
     const e = baseEnvelope({
       kind: 'permission_request',
-      meta: { request_id: 'abcde', tool_name: 'Bash', input_preview: 'ls', requester: 'alice' }
+      content: 'Delete <dist>',
+      meta: {
+        request_id: 'abcde', tool_name: 'Bash', input_preview: 'rm -rf dist/',
+        expires_at: '2026-04-17T23:06:12.345Z', requester: 'alice'
+      }
     })
     const n = envelopeToChannelNotification(e)
-    expect(n.method).toBe('notifications/claude/channel/permission_request')
-    expect(n.params.request_id).toBe('abcde')
-    expect(n.params.tool_name).toBe('Bash')
-    expect(n.params.input_preview).toBe('ls')
+    expect(n.method).toBe('notifications/claude/channel')
+    expect(n.params.content).toBe('Delete &lt;dist&gt;')
+    expect(n.params.meta).toEqual({
+      from: 'alice', msg_id: 'msg_01HRK7Y0000000000000000000', kind: 'permission_request',
+      request_id: 'abcde', tool_name: 'Bash', input_preview: 'rm -rf dist/',
+      expires_at: '2026-04-17T23:06:12.345Z'
+    })
+  })
+
+  it('permission_request attribution comes from the envelope, not sender meta', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({
+      from: 'mallory', kind: 'permission_request',
+      meta: { request_id: 'abcde', requester: 'boss', from: 'boss' }
+    }))
+    expect(n.params.meta.from).toBe('mallory')
+    expect(n.params.meta).not.toHaveProperty('requester')
+  })
+
+  it('sender meta cannot make a chat look like a permission request', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({
+      meta: { kind: 'permission_request', request_id: 'abcde' }
+    }))
+    expect(n.params.meta).not.toHaveProperty('kind')
   })
 
   it('emits permission method for kind=permission_verdict', () => {
@@ -97,12 +122,11 @@ describe('envelopeToChannelNotification', () => {
     expect(n.params.meta.thread_root).toBe('msg_01HRK7Y0000000000000000002')
   })
 
-  it('permission_request with empty meta falls through to empty-string defaults', () => {
-    const e = baseEnvelope({ kind: 'permission_request', meta: {} })
-    const n = envelopeToChannelNotification(e)
-    expect(n.params.request_id).toBe('')
-    expect(n.params.tool_name).toBe('')
-    expect(n.params.input_preview).toBe('')
+  it('permission_request with empty meta still carries from, msg_id and kind', () => {
+    const n = envelopeToChannelNotification(baseEnvelope({ kind: 'permission_request', meta: {} }))
+    expect(n.params.meta).toEqual({
+      from: 'alice', msg_id: 'msg_01HRK7Y0000000000000000000', kind: 'permission_request'
+    })
   })
 
   it('permission_verdict with no request_id in meta falls through to empty string', () => {

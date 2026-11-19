@@ -7,29 +7,12 @@ export interface ChannelNotification {
     content: string
     meta: Record<string, string>
     request_id?: string
-    tool_name?: string
-    description?: string
-    input_preview?: string
     behavior?: 'allow' | 'deny'
   }
 }
 
 export function envelopeToChannelNotification(e: Envelope): ChannelNotification {
   const safeMeta = sanitizeMeta(e.meta)
-
-  if (e.kind === 'permission_request') {
-    return {
-      method: 'notifications/claude/channel/permission_request',
-      params: {
-        content: e.content,
-        meta: safeMeta,
-        request_id: safeMeta.request_id ?? '',
-        tool_name: safeMeta.tool_name ?? '',
-        description: e.content,
-        input_preview: safeMeta.input_preview ?? ''
-      }
-    }
-  }
 
   if (e.kind === 'permission_verdict') {
     return {
@@ -43,6 +26,8 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
     }
   }
 
+  // Peer permission requests ride the plain channel event too: Claude Code only
+  // sends notifications/claude/channel/permission_request, it never handles one.
   return {
     method: 'notifications/claude/channel',
     params: {
@@ -50,6 +35,7 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
       meta: {
         from: e.from,
         msg_id: e.id,
+        ...(e.kind === 'permission_request' ? { kind: e.kind } : {}),
         ...(e.in_reply_to ? { in_reply_to: e.in_reply_to } : {}),
         ...(e.thread_root ? { thread_root: e.thread_root } : {}),
         ...withoutReserved(safeMeta)
@@ -58,10 +44,10 @@ export function envelopeToChannelNotification(e: Envelope): ChannelNotification 
   }
 }
 
-// Attributes the peer-agent sets from the authenticated envelope (and `source`,
-// which Claude Code sets itself); sender-supplied meta must never shadow them.
+// Attributes set from the authenticated envelope, plus `source` (Claude Code sets
+// it) and `requester` (a sender-claimed copy of `from`): sender meta never shadows them.
 const RESERVED_META_KEYS: ReadonlySet<string> = new Set([
-  'from', 'msg_id', 'in_reply_to', 'thread_root', 'source'
+  'from', 'msg_id', 'in_reply_to', 'thread_root', 'source', 'kind', 'requester'
 ])
 
 function withoutReserved(meta: Record<string, string>): Record<string, string> {

@@ -340,11 +340,11 @@ sequenceDiagram
   PAA->>R: POST /v1/messages kind=permission_request
   R->>PAB: SSE event
   Note over PAB: PermissionTracker records request_id
-  PAB->>CCB: notifications/claude/channel/permission_request
+  PAB->>CCB: notifications/claude/channel (kind=permission_request)
   CCB->>PAB: MCP tool respond_to_permission(abcde, allow)
   PAB->>R: POST /v1/messages kind=permission_verdict, in_reply_to=<req>
   R->>PAA: SSE event
-  PAA->>CCA: notifications/claude/channel (behavior=allow)
+  PAA->>CCA: notifications/claude/channel/permission (behavior=allow)
   Note over CCA: First-answer-wins: Alice's local dialog resolves too
 ```
 
@@ -385,7 +385,7 @@ classDiagram
 The peer-agent serializes inbound envelopes into MCP notifications:
 
 - `chat` → `notifications/claude/channel`
-- `permission_request` → `notifications/claude/channel/permission_request`
+- `permission_request` → `notifications/claude/channel` with `kind="permission_request"` (Claude Code only *sends* `.../permission_request`; dropped when the approver has permission relay off)
 - `permission_verdict` → `notifications/claude/channel/permission`
 
 See `packages/shared/src/channel.ts`.

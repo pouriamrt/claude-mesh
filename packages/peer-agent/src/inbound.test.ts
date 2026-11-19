@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { InboundDispatcher } from './inbound.ts'
 import { SenderGate } from './gate.ts'
+import { PermissionTracker } from './permission.ts'
 import type { Envelope } from '@claude-mesh/shared'
 
 const envelope = (overrides: Partial<Envelope> = {}): Envelope => ({
@@ -48,12 +49,33 @@ describe('InboundDispatcher', () => {
     expect(recorded).toEqual(['alice'])
   })
 
-  it('maps kind=permission_request to correct method', () => {
-    d.handle(envelope({
+  it('with permission relay on, records a permission_request and shows it as a channel event', () => {
+    const tracker = new PermissionTracker({ ttlMs: 60_000 })
+    const d2 = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      emit: n => { sent.push(n) },
+      setCursor: () => { /* no-op */ },
+      permissionTracker: tracker,
+    })
+    d2.handle(envelope({
       kind: 'permission_request',
-      meta: { request_id: 'abcde', tool_name: 'Bash', input_preview: 'ls', requester: 'alice' }
+      meta: { request_id: 'abcde', tool_name: 'Bash', input_preview: 'ls' }
     }))
-    expect(sent[0]!.method).toBe('notifications/claude/channel/permission_request')
+    expect(sent[0]!.method).toBe('notifications/claude/channel')
+    expect(sent[0]!.params.meta).toMatchObject({ kind: 'permission_request', request_id: 'abcde' })
+    expect(tracker.senderFor('abcde')).toBe('alice')
+  })
+
+  it('with permission relay off, drops a permission_request but still advances the cursor', () => {
+    const cursors: string[] = []
+    const d2 = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      emit: n => { sent.push(n) },
+      setCursor: id => cursors.push(id),
+    })
+    d2.handle(envelope({ kind: 'permission_request', meta: { request_id: 'abcde' } }))
+    expect(sent).toHaveLength(0)
+    expect(cursors).toEqual(['msg_01HRK7Y0000000000000000000'])
   })
 
   it('maps kind=permission_verdict to correct method', () => {

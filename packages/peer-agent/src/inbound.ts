@@ -25,7 +25,13 @@ export class InboundDispatcher {
       return
     }
     if (e.kind === 'chat') this.opts.recordDm?.(e.from)
-    if (e.kind === 'permission_request' && this.opts.permissionTracker) {
+    if (e.kind === 'permission_request') {
+      // Relay off means no respond_to_permission tool: don't show a request nobody can answer.
+      if (!this.opts.permissionTracker) {
+        logJson('info', 'peer.permission.inbound_dropped_relay_off', { from: e.from, msg_id: e.id })
+        this.opts.setCursor(e.id)
+        return
+      }
       const rid = e.meta.request_id ?? ''
       if (rid) this.opts.permissionTracker.recordIncoming(rid, e.id, e.from)
     }
