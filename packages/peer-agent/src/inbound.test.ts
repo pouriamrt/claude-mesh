@@ -66,6 +66,19 @@ describe('InboundDispatcher', () => {
     expect(tracker.senderFor('abcde')).toBe('alice')
   })
 
+  it('drops a permission_request with no request_id (unanswerable) but still advances the cursor', () => {
+    const cursors: string[] = []
+    const d2 = new InboundDispatcher({
+      gate: new SenderGate(['alice']),
+      emit: n => { sent.push(n) },
+      setCursor: id => cursors.push(id),
+      permissionTracker: new PermissionTracker({ ttlMs: 60_000 }),
+    })
+    d2.handle(envelope({ kind: 'permission_request', meta: { tool_name: 'Bash' } }))
+    expect(sent).toHaveLength(0)
+    expect(cursors).toEqual(['msg_01HRK7Y0000000000000000000'])
+  })
+
   it('with permission relay off, drops a permission_request but still advances the cursor', () => {
     const cursors: string[] = []
     const d2 = new InboundDispatcher({
