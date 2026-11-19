@@ -392,7 +392,7 @@ See `packages/shared/src/channel.ts`.
 
 ## Requirements
 
-- **Claude Code v2.1.80+** (v2.1.81+ for permission relay), signed in with `claude.ai`. Research-preview `claude/channel` capability is not available on API-key / Console auth.
+- **Claude Code v2.1.80+** (v2.1.81+ for permission relay), signed in with `claude.ai` or a Claude Console API key. Research-preview `claude/channel` is not available on Amazon Bedrock, Google Cloud, or Microsoft Foundry.
 - Team / Enterprise orgs: admin must enable channels via the `channelsEnabled` policy.
 - **Node 22+** with pnpm 10 for local dev. Native `better-sqlite3` binding is built via `node-gyp` if no prebuilt exists for your Node version (MSVC on Windows, `build-essential` on Linux).
 - For Docker: a Linux host with Docker + DNS if you're using the bundled Caddy TLS.
@@ -579,7 +579,7 @@ Send them the pair code over a trusted side channel (Signal, 1Password share, in
 
 ### 8. Wire into Claude Code
 
-Requires **Claude Code v2.1.80+** signed in with `claude.ai` (not API key).
+Requires **Claude Code v2.1.80+** signed in with `claude.ai` or a Claude Console API key (not Bedrock / Google Cloud / Foundry).
 
 **You must launch Claude Code with the `--dangerously-load-development-channels` flag** so it actually delivers our `notifications/claude/channel` events to the model. Without it, the MCP loads, tools work, but channel tags are silently filtered:
 
@@ -643,7 +643,7 @@ The pair code is either malformed, already consumed (single-use), or expired (24
 You already redeemed this code. Delete `~/.claude-mesh/token` + `~/.claude-mesh/config.json` and generate a new pair code via `mesh admin add-user` with a different `--handle`, or re-issue by disabling the existing user (`mesh admin disable-user`) and re-adding.
 
 **Claude Code doesn't show `send_to_peer` after restart**
-Check `~/.claude.json` contains the `claude-mesh-peers` entry. Check Claude Code version: `claude --version` must be 2.1.80+. Check you're signed in with `claude.ai`, not an API key (`/login`). Check the peer-agent didn't crash: run `claude-mesh-peer-agent` manually — it should spin up an MCP server on stdio and log `{"event":"peer.stream.open"...}` once connected.
+Check `~/.claude.json` contains the `claude-mesh-peers` entry. Check Claude Code version: `claude --version` must be 2.1.80+. Check you're signed in with `claude.ai` or a Console API key, not Bedrock / Google Cloud / Foundry (`/login`). Check the peer-agent didn't crash: run `claude-mesh-peer-agent` manually — it should spin up an MCP server on stdio and log `{"event":"peer.stream.open"...}` once connected.
 
 **Tools work but `<channel>` tags never arrive in Claude's context**
 You didn't launch Claude Code with `--dangerously-load-development-channels server:claude-mesh-peers`. See §8 above.
